@@ -3,6 +3,8 @@ import psycopg2
 import pandas as pd
 # https://pygrametl.org
 from pygrametl.datasources import CSVSource, SQLSource
+from tqdm import tqdm
+import logging
 
 
 # Connect to the PostgreSQL source
@@ -33,12 +35,49 @@ except Exception as e:
 
 # TODO: Implement here all the extracting functions
 
+flightsource = SQLSource(connection=conn,
+                        query='select * from "AIMS".flights f;',
+                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
+
+manteinancesource = SQLSource(connection=conn,
+                        query='select * from "AIMS".maintenance m;',
+                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','programmed') )
+
+slotssource = SQLSource(connection=conn,
+                        query='select * from "AIMS".slots s ;',
+                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind') )
+
+logbooksource = SQLSource(connection=conn,
+                        query='select * from "AMOS".technicallogbookorders t;',
+                        names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
+
+manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=',')
+# aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
+personnelsource = CSVSource(open('maintenance_personnel.csv', 'r'), delimiter=',')
+# reporteurid,airport
+
+for i in flightsource:
+    print(i["id"])
 
 
 # ====================================================================================================================================
 # Baseline queries
 def get_aircrafts_per_manufacturer() -> dict[str, list[str]]:
     # TODO: Implement a function to generate a dictionary with one entry per manufacturer and a list of aircraft identifiers as values
+    result: dict[str, list[str]] = {}
+    for row in manufacturerinfosource:
+        # row is a dict-like object: row['aircraft_reg_code'], row['aircraft_manufacturer'], etc.
+        reg = row.get('aircraft_reg_code')
+        manufacturer = row.get('aircraft_manufacturer')
+        if reg is None or manufacturer is None:
+            # skip or log
+            print('AAAAAAAAAAAAAAAAAAAAAAA')
+            continue
+        # Insert into the list
+        if manufacturer not in result:
+            result[manufacturer] = []
+        result[manufacturer].append(reg)
+    return result
 
 
 def query_utilization_baseline():
@@ -126,7 +165,6 @@ def query_utilization_baseline():
     cur.close()
     return result
 
-
 def query_reporting_baseline():
     aircrafts = get_aircrafts_per_manufacturer()
     cur = conn.cursor()
@@ -173,7 +211,6 @@ def query_reporting_baseline():
     result = cur.fetchall()
     cur.close()
     return result
-
 
 def query_reporting_per_role_baseline():
     aircrafts = get_aircrafts_per_manufacturer()
@@ -222,3 +259,40 @@ def query_reporting_per_role_baseline():
     result = cur.fetchall()
     cur.close()
     return result
+
+##################################################################################################################
+# Transform
+# Configure logging
+logging.basicConfig(
+    filename='cleaning.log',           # Log file name
+    level=logging.INFO,           # Logging level
+    format='%(message)s'  # Log message format
+)
+
+def build_dateCode(date) -> str:
+    return f"{date.year}-{date.month}-{date.day}"
+
+
+def build_monthCode(date) -> str:
+    return f"{date.year}{str(date.month).zfill(2)}"
+
+from datetime import datetime
+
+def diff_seconds(dt1, dt2) -> float:
+    delta = dt2 - dt1
+    return delta.total_seconds()
+
+
+#flightinfo = pd.DataFrame(columns=['plane', 'time', 'FH', 'TO'])
+# TODO: hay Null-values en actualdeparture
+print("pandas created")
+for flight in flightsource:
+    print("started iter")
+    print(flight["actualdeparture"])
+    FH = diff_seconds(flight["actualdeparture"], flight["actualarrival"])
+    print("computes FH")
+    #flightinfo.add('a', 'b', FH, 'd')
+    print("adds to pandas")
+    print(FH)
+    print("ended iter")
+

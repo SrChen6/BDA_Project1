@@ -1,0 +1,6 @@
+dbms=postgresql
+ip=postgresfib17.fib.upc.edu
+port=5432
+user=haokang.chen
+password=DB170705
+dbname=DBBDA
