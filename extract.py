@@ -56,8 +56,6 @@ manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', '
 personnelsource = CSVSource(open('maintenance_personnel.csv', 'r'), delimiter=',')
 # reporteurid,airport
 
-for i in flightsource:
-    print(i["id"])
 
 
 # ====================================================================================================================================
@@ -279,20 +277,23 @@ def build_monthCode(date) -> str:
 from datetime import datetime
 
 def diff_seconds(dt1, dt2) -> float:
-    delta = dt2 - dt1
-    return delta.total_seconds()
+    if (dt1 != None) & (dt2 != None):
+        delta = dt2 - dt1
+        return delta.total_seconds()
+    else: return None
 
 
-#flightinfo = pd.DataFrame(columns=['plane', 'time', 'FH', 'TO'])
-# TODO: hay Null-values en actualdeparture
+
+flightinfo = pd.DataFrame(columns=['aircract', 'time', 'FH', 'TO'])
 print("pandas created")
-for flight in flightsource:
-    print("started iter")
-    print(flight["actualdeparture"])
+for flight in tqdm(flightsource):
     FH = diff_seconds(flight["actualdeparture"], flight["actualarrival"])
-    print("computes FH")
-    #flightinfo.add('a', 'b', FH, 'd')
-    print("adds to pandas")
-    print(FH)
-    print("ended iter")
+    if FH != None:
+        #Consideramos que time es el momento de despegue
+        flightinfo.loc[len(flightinfo)] = [flight['aircraftregistration'],flight['actualdeparture'],FH,1]
+print(flightinfo.head())
 
+# Comments: 1 tabla / dimension
+# Cada dimension necesitara de su tabla al final del ETL
+# Facts que sean similares (ie FH y TO) pueden compartir una tabla
+# pygrametl tiene tipos que podemos aprovechar (facts, dimensiones, etc)
