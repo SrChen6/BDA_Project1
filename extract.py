@@ -33,7 +33,6 @@ except Exception as e:
     raise ValueError(f"Database configuration file '{path.absolute()}' not properly formatted (check file 'db_conf.example.txt'.")
 
 
-# TODO: Implement here all the extracting functions
 
 flightsource = SQLSource(connection=conn,
                         query='select * from "AIMS".flights f;',
@@ -76,7 +75,6 @@ def get_aircrafts_per_manufacturer() -> dict[str, list[str]]:
             result[manufacturer] = []
         result[manufacturer].append(reg)
     return result
-
 
 def query_utilization_baseline():
     aircrafts = get_aircrafts_per_manufacturer()
@@ -274,26 +272,60 @@ def build_dateCode(date) -> str:
 def build_monthCode(date) -> str:
     return f"{date.year}{str(date.month).zfill(2)}"
 
-from datetime import datetime
-
 def diff_seconds(dt1, dt2) -> float:
-    if (dt1 != None) & (dt2 != None):
-        delta = dt2 - dt1
-        return delta.total_seconds()
-    else: return None
+    delta = dt2 - dt1
+    return delta.total_seconds()
 
 
+def create_dim_aircraft():
+    aircraftdim = pd.DataFrame(columns=['aircraft', 'model', 'manufacturer'])
+    for aircraft in manufacturerinfosource:
+        aircraftdim.loc[len(aircraftdim)] = [aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']]
+    print(aircraftdim.head())
+    return aircraftdim
 
-flightinfo = pd.DataFrame(columns=['aircract', 'time', 'FH', 'TO'])
-print("pandas created")
-for flight in tqdm(flightsource):
-    FH = diff_seconds(flight["actualdeparture"], flight["actualarrival"])
-    if FH != None:
-        #Consideramos que time es el momento de despegue
-        flightinfo.loc[len(flightinfo)] = [flight['aircraftregistration'],flight['actualdeparture'],FH,1]
-print(flightinfo.head())
 
-# Comments: 1 tabla / dimension
-# Cada dimension necesitara de su tabla al final del ETL
-# Facts que sean similares (ie FH y TO) pueden compartir una tabla
-# pygrametl tiene tipos que podemos aprovechar (facts, dimensiones, etc)
+def create_dim_time():
+    timedim = pd.DataFrame(columns=['date', 'day', 'month', 'year'])
+    for date in pd.date_range("2023-01-01", "2024-12-31"):
+        print(date)
+
+
+def extractFH():
+    # FH, TO
+    test = []
+    for flight in tqdm(flightsource):
+        if flight["cancelled"] == 0:
+            FH = diff_seconds(flight["actualdeparture"], flight["actualarrival"])
+            #Consideramos que time es el momento de despegue
+            test.append([flight['aircraftregistration'],flight['actualdeparture'],FH,1])
+            # adds time to timedim
+            #timedim.loc[len(timedim)] = [flight['actualdeparture'], flight['actualdeparture'].day, flight['actualdeparture'].month, flight['actualdeparture'].year]
+    flightinfo = pd.DataFrame(test, columns=['aircraft', 'time', 'FH', 'TO'])
+    print(flightinfo.head())
+    return 
+
+create_dim_aircraft()
+
+create_dim_time()
+
+extractFH()
+
+def extractADOS():
+    # ADOS, ADOSS, ADOSU
+    outofservice = pd.DataFrame(columns=['aircraft', 'time', 'ADOS', 'ADOSS', 'ADOSU'])
+    for maint in tqdm(manteinancesource):
+        #TODO: compute ADOS, ADOSS, ADOSU
+        pass
+
+
+#####################################################################################################
+'''
+from dw import DW
+import duckdb
+
+dw = DW(create=True)
+#con = duckdb.connect('dw.duckdb')
+con = dw.conn_duckdb
+con.register('timedim', timedim)
+con.sql("INSERT INTO dim_date BY NAME SELECT * FROM timedim")'''
