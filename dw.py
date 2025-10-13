@@ -21,20 +21,122 @@ class DW:
 
         if create:
             try:
-                # TODO: Create the tables in the DW
-                self.conn_duckdb.execute('''
-                    CREATE TABLE XXX ...;
-                    ''')
-                print("XXX created successfully")
+                self._create_schema()
+                print("DW schema created successfully")
             except duckdb.Error as e:
                 print("Error creating the DW tables:", e)
                 sys.exit(2)
 
         # Link DuckDB and pygrametl
         self.conn_pygrametl = pygrametl.ConnectionWrapper(self.conn_duckdb)
-
+        self._declare_tables()
         # ======================================================================================================= Dimension and fact table objects
-        # TODO: Declare the dimensions and facts for pygrametl
+
+    def _create_schema(self):
+        self.conn_duckdb.execute("""
+        CREATE TABLE dim_date (
+            date_id INTEGER PRIMARY KEY,
+            date DATE,
+            day INTEGER,
+            month INTEGER,
+            year INTEGER
+        );
+
+        CREATE TABLE dim_aircraft (
+            aircraft_id INTEGER PRIMARY KEY,
+            registration_code TEXT,
+            manufacturer_code TEXT,
+            model TEXT,
+            manufacturer TEXT
+        );
+
+        CREATE TABLE dim_airport (
+            airport_id INTEGER PRIMARY KEY,
+            airport_code TEXT,
+            airport_name TEXT,
+            country TEXT
+        );
+
+        CREATE TABLE dim_personnel (
+            personnel_id INTEGER PRIMARY KEY,
+            name TEXT,
+            role TEXT, -- 'Pilot' or 'Maintenance'
+            airport_id INTEGER,
+            FOREIGN KEY (airport_id) REFERENCES dim_airport(airport_id)
+        );
+
+        CREATE TABLE fact_utilization (
+            flight_id INTEGER PRIMARY KEY,
+            aircraft_id INTEGER,
+            date_id INTEGER,
+            FH DOUBLE,  -- Flight Hours
+            "TO" INTEGER, -- Take-Offs
+            ADIS DOUBLE,
+            ADOS DOUBLE,
+            DYR DOUBLE,
+            FOREIGN KEY (aircraft_id) REFERENCES dim_aircraft(aircraft_id),
+            FOREIGN KEY (date_id) REFERENCES dim_date(date_id)
+        );
+
+        CREATE TABLE fact_reporting (
+            report_id INTEGER PRIMARY KEY,
+            aircraft_id INTEGER,
+            personnel_id INTEGER,
+            date_id INTEGER,
+            RRh DOUBLE,
+            RRc DOUBLE,
+            PRRh DOUBLE,
+            PRRc DOUBLE,
+            MRRh DOUBLE,
+            MRRc DOUBLE,
+            FOREIGN KEY (aircraft_id) REFERENCES dim_aircraft(aircraft_id),
+            FOREIGN KEY (personnel_id) REFERENCES dim_personnel(personnel_id),
+            FOREIGN KEY (date_id) REFERENCES dim_date(date_id)
+        );
+        """)
+
+    # =========================================================================================================
+    def _declare_tables(self):
+        self.dim_date = CachedDimension(
+            name='dim_date',
+            key='date_id',
+            attributes=['date', 'day', 'month', 'year'],
+            lookupatts=['date']
+        )
+
+        self.dim_aircraft = CachedDimension(
+            name='dim_aircraft',
+            key='aircraft_id',
+            attributes=['registration_code', 'manufacturer_code', 'model', 'manufacturer'],
+            lookupatts=['registration_code']
+        )
+
+        self.dim_airport = CachedDimension(
+            name='dim_airport',
+            key='airport_id',
+            attributes=['airport_code', 'airport_name', 'country'],
+            lookupatts=['airport_code']
+        )
+
+        self.dim_personnel = CachedDimension(
+            name='dim_personnel',
+            key='personnel_id',
+            attributes=['name', 'role', 'airport_id'],
+            lookupatts=['name']
+        )
+
+        self.fact_utilization = FactTable(
+            name='fact_utilization',
+            keyrefs=['aircraft_id', 'date_id'],
+            measures=['FH', 'TO', 'ADIS', 'ADOS', 'DYR']
+        )
+
+        self.fact_reporting = FactTable(
+            name='fact_reporting',
+            keyrefs=['aircraft_id', 'personnel_id', 'date_id'],
+            measures=['RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']
+        )
+
 
     # TODO: Rewrite the queries exemplified in "extract.py"
     def query_utilization(self):
