@@ -278,36 +278,42 @@ def diff_seconds(dt1, dt2) -> float:
 
 
 def create_dim_aircraft():
-    aircraftdim = pd.DataFrame(columns=['aircraft', 'model', 'manufacturer'])
+    aircraft_lst = []
     for aircraft in manufacturerinfosource:
-        aircraftdim.loc[len(aircraftdim)] = [aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']]
+            aircraft_lst.append([aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']])
+    aircraftdim = pd.DataFrame(aircraft_lst, columns=['aircraft', 'model', 'manufacturer'])
     print(aircraftdim.head())
     return aircraftdim
 
 
 def create_dim_time():
-    timedim = pd.DataFrame(columns=['date', 'day', 'month', 'year'])
+    time_lst = []
     for date in pd.date_range("2023-01-01", "2024-12-31"):
-        print(date)
+        time_lst.append([date, date.day, date.month, date.year])
+    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
+    print(timedim.head())
+    return timedim
+        
 
 
 def extractFH():
     # FH, TO
-    test = []
+    flightinfo_lst = []
     for flight in tqdm(flightsource):
         if flight["cancelled"] == 0:
-            FH = diff_seconds(flight["actualdeparture"], flight["actualarrival"])
+            FH = flight["actualarrival"] - flight["actualdeparture"]
             #Consideramos que time es el momento de despegue
-            test.append([flight['aircraftregistration'],flight['actualdeparture'],FH,1])
+            flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1])
             # adds time to timedim
-            #timedim.loc[len(timedim)] = [flight['actualdeparture'], flight['actualdeparture'].day, flight['actualdeparture'].month, flight['actualdeparture'].year]
-    flightinfo = pd.DataFrame(test, columns=['aircraft', 'time', 'FH', 'TO'])
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'time', 'FH', 'TO'])
+    flightinfo = flightinfo.groupby(['aircraft', 'time'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+
     print(flightinfo.head())
     return 
 
-create_dim_aircraft()
+airdim = create_dim_aircraft()
 
-create_dim_time()
+timedim = create_dim_time()
 
 extractFH()
 
@@ -320,12 +326,14 @@ def extractADOS():
 
 
 #####################################################################################################
-'''
+
 from dw import DW
 import duckdb
 
 dw = DW(create=True)
-#con = duckdb.connect('dw.duckdb')
+con = duckdb.connect('dw.duckdb')
 con = dw.conn_duckdb
 con.register('timedim', timedim)
-con.sql("INSERT INTO dim_date BY NAME SELECT * FROM timedim")'''
+con.sql("INSERT INTO dim_date BY NAME SELECT * FROM timedim")
+con.register('airdim', airdim)
+con.sql("INSERT INTO dim_date BY NAME SELECT * FROM airdim")

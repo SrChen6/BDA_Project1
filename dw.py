@@ -35,8 +35,7 @@ class DW:
     def _create_schema(self):
         self.conn_duckdb.execute("""
         CREATE TABLE dim_date (
-            date_id INTEGER PRIMARY KEY,
-            date DATE,
+            date DATE PRIMARY KEY,
             day INTEGER,
             month INTEGER,
             year INTEGER
@@ -68,21 +67,21 @@ class DW:
         CREATE TABLE fact_utilization (
             flight_id INTEGER PRIMARY KEY,
             aircraft_id INTEGER,
-            date_id INTEGER,
+            date DATE,
             FH DOUBLE,  -- Flight Hours
             "TO" INTEGER, -- Take-Offs
             ADIS DOUBLE,
             ADOS DOUBLE,
             DYR DOUBLE,
             FOREIGN KEY (aircraft_id) REFERENCES dim_aircraft(aircraft_id),
-            FOREIGN KEY (date_id) REFERENCES dim_date(date_id)
+            FOREIGN KEY (date) REFERENCES dim_date(date)
         );
 
         CREATE TABLE fact_reporting (
             report_id INTEGER PRIMARY KEY,
             aircraft_id INTEGER,
             personnel_id INTEGER,
-            date_id INTEGER,
+            date DATE,
             RRh DOUBLE,
             RRc DOUBLE,
             PRRh DOUBLE,
@@ -91,7 +90,7 @@ class DW:
             MRRc DOUBLE,
             FOREIGN KEY (aircraft_id) REFERENCES dim_aircraft(aircraft_id),
             FOREIGN KEY (personnel_id) REFERENCES dim_personnel(personnel_id),
-            FOREIGN KEY (date_id) REFERENCES dim_date(date_id)
+            FOREIGN KEY (date ) REFERENCES dim_date(date )
         );
         """)
 
@@ -99,8 +98,8 @@ class DW:
     def _declare_tables(self):
         self.dim_date = CachedDimension(
             name='dim_date',
-            key='date_id',
-            attributes=['date', 'day', 'month', 'year'],
+            key='date ',
+            attributes=['date','day', 'month', 'year'],
             lookupatts=['date']
         )
 
@@ -127,13 +126,13 @@ class DW:
 
         self.fact_utilization = FactTable(
             name='fact_utilization',
-            keyrefs=['aircraft_id', 'date_id'],
+            keyrefs=['aircraft_id', 'date '],
             measures=['FH', 'TO', 'ADIS', 'ADOS', 'DYR']
         )
 
         self.fact_reporting = FactTable(
             name='fact_reporting',
-            keyrefs=['aircraft_id', 'personnel_id', 'date_id'],
+            keyrefs=['aircraft_id', 'personnel_id', 'date '],
             measures=['RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']
         )
 
