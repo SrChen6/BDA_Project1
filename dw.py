@@ -42,9 +42,7 @@ class DW:
         );
 
         CREATE TABLE dim_aircraft (
-            aircraft_id INTEGER PRIMARY KEY,
-            registration_code TEXT,
-            manufacturer_code TEXT,
+            aircraft TEXT PRIMARY KEY,
             model TEXT,
             manufacturer TEXT
         );
@@ -65,21 +63,21 @@ class DW:
         );
 
         CREATE TABLE fact_utilization (
-            flight_id INTEGER PRIMARY KEY,
-            aircraft_id INTEGER,
+            aircraft TEXT,
             date DATE,
-            FH DOUBLE,  -- Flight Hours
+            FH INTERVAL,  -- Flight Hours
             "TO" INTEGER, -- Take-Offs
             ADIS DOUBLE,
             ADOS DOUBLE,
             DYR DOUBLE,
-            FOREIGN KEY (aircraft_id) REFERENCES dim_aircraft(aircraft_id),
+            PRIMARY KEY (aircraft, date),
+            FOREIGN KEY (aircraft) REFERENCES dim_aircraft(aircraft),
             FOREIGN KEY (date) REFERENCES dim_date(date)
         );
 
         CREATE TABLE fact_reporting (
             report_id INTEGER PRIMARY KEY,
-            aircraft_id INTEGER,
+            aircraft TEXT,
             personnel_id INTEGER,
             date DATE,
             RRh DOUBLE,
@@ -88,7 +86,7 @@ class DW:
             PRRc DOUBLE,
             MRRh DOUBLE,
             MRRc DOUBLE,
-            FOREIGN KEY (aircraft_id) REFERENCES dim_aircraft(aircraft_id),
+            FOREIGN KEY (aircraft) REFERENCES dim_aircraft(aircraft),
             FOREIGN KEY (personnel_id) REFERENCES dim_personnel(personnel_id),
             FOREIGN KEY (date ) REFERENCES dim_date(date )
         );
@@ -105,7 +103,7 @@ class DW:
 
         self.dim_aircraft = CachedDimension(
             name='dim_aircraft',
-            key='aircraft_id',
+            key='aircraft',
             attributes=['registration_code', 'manufacturer_code', 'model', 'manufacturer'],
             lookupatts=['registration_code']
         )
@@ -126,13 +124,13 @@ class DW:
 
         self.fact_utilization = FactTable(
             name='fact_utilization',
-            keyrefs=['aircraft_id', 'date '],
+            keyrefs=['aircraft', 'date '],
             measures=['FH', 'TO', 'ADIS', 'ADOS', 'DYR']
         )
 
         self.fact_reporting = FactTable(
             name='fact_reporting',
-            keyrefs=['aircraft_id', 'personnel_id', 'date '],
+            keyrefs=['aircraft', 'personnel_id', 'date '],
             measures=['RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']
         )
 

@@ -270,11 +270,7 @@ def build_dateCode(date) -> str:
 
 
 def build_monthCode(date) -> str:
-    return f"{date.year}{str(date.month).zfill(2)}"
-
-def diff_seconds(dt1, dt2) -> float:
-    delta = dt2 - dt1
-    return delta.total_seconds()
+    return f"{date.year}-{str(date.month).zfill(2)}"
 
 
 def create_dim_aircraft():
@@ -295,34 +291,63 @@ def create_dim_time():
     return timedim
         
 
-
 def extractFH():
     # FH, TO
     flightinfo_lst = []
     for flight in tqdm(flightsource):
         if flight["cancelled"] == 0:
             FH = flight["actualarrival"] - flight["actualdeparture"]
-            #Consideramos que time es el momento de despegue
+            #The date corresponds to the departure
             flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1])
-            # adds time to timedim
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'time', 'FH', 'TO'])
-    flightinfo = flightinfo.groupby(['aircraft', 'time'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
-
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
+    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
     print(flightinfo.head())
-    return 
-
-airdim = create_dim_aircraft()
-
-timedim = create_dim_time()
-
-extractFH()
+    return flightinfo
 
 def extractADOS():
     # ADOS, ADOSS, ADOSU
-    outofservice = pd.DataFrame(columns=['aircraft', 'time', 'ADOS', 'ADOSS', 'ADOSU'])
+
+    outofservice = pd.DataFrame(columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU', 'ADIS'])
+    ADO_lst = []
     for maint in tqdm(manteinancesource):
-        #TODO: compute ADOS, ADOSS, ADOSU
-        pass
+        #Converting days & hours to days with decimals
+        maint_H = (maint['scheduledarrival']-maint['scheduleddeparture'])/pd.Timedelta(days=1)
+        if maint['programmed'] == 1:
+            #The date corresponds to the departure
+            #If programmed, then it counts as ADOSS
+            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']), 
+                            maint_H, maint_H, 0])
+        else:
+            #If not programmed, then it counts as ADOSU
+            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']), 
+                            maint_H, 0, maint_H])
+    ADO = pd.DataFrame(ADO_lst, columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU'])
+    #TODO: ara mateix date està només en mesos, com ho afegim a la taula de dates, que inclou els dies?
+    ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOS': 'sum', 'ADOSS': 'sum', 'ADOSU': 'sum'})
+    ADO['ADIS'] = 365-ADO['ADOS']
+    print(ADO.head())
+    return ADO
+
+def extractDYR(FH):
+    #DYR, CNR, TDR, ADD
+    flightsource = SQLSource(connection=conn,
+                        query='select * from "AIMS".flights f;',
+                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
+    #TODO: no hi ha una altra manera d'utilitzar l'iterador? l'hem d'inicialitzar així un altre cop?
+    delay_lst = []
+    for flight in tqdm(flightsource):
+        #TODO: compute DYR, CNR, TDR, ADD
+        if flight['delaycode'] != None:
+            print('null')
+    delayinfo = pd.DataFrame(delay_lst, columns=['aircraft', 'date', 'DYR', 'CNR', 'TDR', 'ADD'])
+    print(delayinfo.head())
+    return delayinfo
+
+airdim = create_dim_aircraft()
+timedim = create_dim_time()
+FH = extractFH()
+ADOS = extractADOS()
+DYR = extractDYR(FH)
 
 
 #####################################################################################################
@@ -336,4 +361,11 @@ con = dw.conn_duckdb
 con.register('timedim', timedim)
 con.sql("INSERT INTO dim_date BY NAME SELECT * FROM timedim")
 con.register('airdim', airdim)
-con.sql("INSERT INTO dim_date BY NAME SELECT * FROM airdim")
+con.sql("INSERT INTO dim_aircraft BY NAME SELECT * FROM airdim")
+
+con.register('fact_util', FH)
+con.sql("INSERT INTO fact_utilization BY NAME SELECT * FROM fact_util")
+#TODO: anadir ADOSS, ADOSU a dw.py
+
+#test = con.sql("SELECT * FROM fact_utilization")
+#print(test)
