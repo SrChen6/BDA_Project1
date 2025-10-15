@@ -278,7 +278,6 @@ def create_dim_aircraft():
     for aircraft in manufacturerinfosource:
             aircraft_lst.append([aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']])
     aircraftdim = pd.DataFrame(aircraft_lst, columns=['aircraft', 'model', 'manufacturer'])
-    print(aircraftdim.head())
     return aircraftdim
 
 
@@ -287,20 +286,35 @@ def create_dim_time():
     for date in pd.date_range("2023-01-01", "2024-12-31"):
         time_lst.append([date, date.day, date.month, date.year])
     timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
-    print(timedim.head())
     return timedim
         
 
-def extractFH():
-    # FH, TO
+def extract_flight():
+    prev_flight = None
+
     flightinfo_lst = []
     for flight in tqdm(flightsource):
+        # print(flight['aircraftregistration'], flight['actualdeparture'], flight['actualarrival'])
         if flight["cancelled"] == 0:
-            FH = flight["actualarrival"] - flight["actualdeparture"]
-            #The date corresponds to the departure
-            flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1])
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
-    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+            # Business rule 1: arrival can not be posterior to departure
+            if prev_flight is not None:
+                if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
+                    flightinfo_lst.pop()
+            prev_flight = flight
+            FH = abs(flight["actualarrival"] - flight["actualdeparture"])
+            # The date corresponds to the departure
+            if flight['delaycode'] != None:
+                # aircraft, date, FH, TO, DY, CN
+                flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1,0,0])
+            else:
+                flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1,1,0])
+        else:
+            flightinfo_lst.append([flight['aircraftregistration'],flight['scheduleddeparture'].date(),pd.Timedelta(0),1,0,1])
+
+        
+
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO', 'DYR', 'CNR'])
+    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum', 'DYR': 'sum', 'CNR': 'sum'})
     print(flightinfo.head())
     return flightinfo
 
@@ -333,19 +347,22 @@ def extractDYR(FH):
     flightsource = SQLSource(connection=conn,
                         query='select * from "AIMS".flights f;',
                         names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
-    #TODO: no hi ha una altra manera d'utilitzar l'iterador? l'hem d'inicialitzar així un altre cop?
+    #TODO: no hi ha una altra manera d'utilitzar l'iterador? l'hem d'inicialitzar aixi un altre cop?
     delay_lst = []
     for flight in tqdm(flightsource):
         #TODO: compute DYR, CNR, TDR, ADD
         if flight['delaycode'] != None:
-            print('null')
+            pass
+            #TODO: finish computing
     delayinfo = pd.DataFrame(delay_lst, columns=['aircraft', 'date', 'DYR', 'CNR', 'TDR', 'ADD'])
     print(delayinfo.head())
     return delayinfo
 
 airdim = create_dim_aircraft()
+# TODO:Business rule 3: Check if aircraft registration in airdim set
+airdimset = set(airdim['aircraft'])
 timedim = create_dim_time()
-FH = extractFH()
+FH = extract_flight()
 ADOS = extractADOS()
 DYR = extractDYR(FH)
 
@@ -355,7 +372,7 @@ DYR = extractDYR(FH)
 from dw import DW
 import duckdb
 
-dw = DW(create=True)
+'''dw = DW(create=True)
 con = duckdb.connect('dw.duckdb')
 con = dw.conn_duckdb
 con.register('timedim', timedim)
@@ -367,5 +384,5 @@ con.register('fact_util', FH)
 con.sql("INSERT INTO fact_utilization BY NAME SELECT * FROM fact_util")
 #TODO: anadir ADOSS, ADOSU a dw.py
 
-#test = con.sql("SELECT * FROM fact_utilization")
-#print(test)
+test = con.sql("SELECT * FROM fact_utilization")
+print(test)'''
