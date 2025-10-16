@@ -65,11 +65,12 @@ class DW:
         CREATE TABLE fact_utilization (
             aircraft TEXT,
             date DATE,
-            FH INTERVAL,  -- Flight Hours
+            FH DOUBLE,  -- Flight Hours
             "TO" INTEGER, -- Take-Offs
             ADIS DOUBLE,
             ADOS DOUBLE,
             DYR DOUBLE,
+            CNR DOUBLE,
             PRIMARY KEY (aircraft, date),
             FOREIGN KEY (aircraft) REFERENCES dim_aircraft(aircraft),
             FOREIGN KEY (date) REFERENCES dim_date(date)
@@ -125,7 +126,7 @@ class DW:
         self.fact_utilization = FactTable(
             name='fact_utilization',
             keyrefs=['aircraft', 'date '],
-            measures=['FH', 'TO', 'ADIS', 'ADOS', 'DYR']
+            measures=['FH', 'TO', 'ADIS', 'ADOS', 'DYR', 'CNR']
         )
 
         self.fact_reporting = FactTable(

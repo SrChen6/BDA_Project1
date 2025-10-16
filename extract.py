@@ -296,31 +296,40 @@ def extract_flight():
     flightinfo_lst = []
     delay_lst = []
     for flight in tqdm(flightsource):
-        # print(flight['aircraftregistration'], flight['actualdeparture'], flight['actualarrival'])
         if flight["cancelled"] == 0:
-            # Business rule 1: arrival can not be posterior to departure
             if prev_flight is not None:
                 if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
+                    # Business rule 2: if two flights are overlaping, ignore the first one
                     flightinfo_lst.pop()
             prev_flight = flight
-            FH = abs(flight["actualarrival"] - flight["actualdeparture"])
-            # The date corresponds to the departure
-            if flight['delaycode'] != None:
-                # aircraft, date, FH, TO, DY, CN
-                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0])
+            # Business rule 1: arrival can not be posterior to departure
+            FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
+            flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH, 1])
+
+            delay_time = flight['actualdeparture']-flight['scheduleddeparture']
+            if (delay_time > pd.Timedelta(minutes=15)) and (delay_time < pd.Timedelta(hours=6)):
+                # The flight has been delayed
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0,delay_time/pd.Timedelta(minutes=1),1])
             else:
-                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0])
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0,0,1])
         else:
-            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1])
+            # The flight has been cancelled
+            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,1])
 
         
 
     flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
     flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
-    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'TDR', 'ADD'])
+    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
+    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
+    #TODO: how to obtain TO for a certain month and aircraft
+    delayinfo['TDR'] = 100-((delayinfo['CNR']+delayinfo['DYR'])/delayinfo['TO'])*100
+    delayinfo['DYR'] = delayinfo['DYR']/delayinfo['TO']*100
+    delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
+    # TODO: add and compute TDR
     print(flightinfo.head())
-    return flightinfo
+    return flightinfo, delayinfo
 
 def extractADOS():
     # ADOS, ADOSS, ADOSU
@@ -346,30 +355,13 @@ def extractADOS():
     print(ADO.head())
     return ADO
 
-def extractDYR(FH):
-    #DYR, CNR, TDR, ADD
-    flightsource = SQLSource(connection=conn,
-                        query='select * from "AIMS".flights f;',
-                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
-    #TODO: no hi ha una altra manera d'utilitzar l'iterador? l'hem d'inicialitzar aixi un altre cop?
-    # TODO:Alternativa: carregar tot a memoria (sus)
-    delay_lst = []
-    for flight in tqdm(flightsource):
-        #TODO: compute DYR, CNR, TDR, ADD
-        if flight['delaycode'] != None:
-            pass
-            #TODO: finish computing
-    delayinfo = pd.DataFrame(delay_lst, columns=['aircraft', 'date', 'DYR', 'CNR', 'TDR', 'ADD'])
-    print(delayinfo.head())
-    return delayinfo
-
 airdim = create_dim_aircraft()
 # TODO:Business rule 3: Check if aircraft registration in airdim set
 airdimset = set(airdim['aircraft'])
 timedim = create_dim_time()
-FH = extract_flight()
+FH, DYR = extract_flight()
+print(DYR.head())
 ADOS = extractADOS()
-DYR = extractDYR(FH)
 
 
 #####################################################################################################
@@ -377,7 +369,7 @@ DYR = extractDYR(FH)
 from dw import DW
 import duckdb
 
-'''dw = DW(create=True)
+dw = DW(create=True)
 con = duckdb.connect('dw.duckdb')
 con = dw.conn_duckdb
 con.register('timedim', timedim)
@@ -389,5 +381,19 @@ con.register('fact_util', FH)
 con.sql("INSERT INTO fact_utilization BY NAME SELECT * FROM fact_util")
 #TODO: anadir ADOSS, ADOSU a dw.py
 
-test = con.sql("SELECT * FROM fact_utilization")
-print(test)'''
+
+byyear = con.sql("""SELECT
+  a.aircraft,
+  a.model,
+  a.manufacturer,
+  d.day,
+  d.month,
+  d.year,
+  SUM(f.FH) AS FH_hours,
+  SUM(f.TO) AS TO_count
+FROM fact_utilization f, dim_date d, dim_aircraft a
+where f.date = d.date and f.aircraft = a.aircraft
+GROUP BY ROLLUP(a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day)
+ORDER BY a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day""")
+print("YEAR")
+print(byyear)
