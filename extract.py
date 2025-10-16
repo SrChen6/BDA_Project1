@@ -301,7 +301,7 @@ def extract_flight():
                 if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
                     flightinfo_lst.pop()
             prev_flight = flight
-            FH = abs(flight["actualarrival"] - flight["actualdeparture"])
+            FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
             # The date corresponds to the departure
             if flight['delaycode'] != None:
                 # aircraft, date, FH, TO, DY, CN
@@ -309,7 +309,7 @@ def extract_flight():
             else:
                 flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1,1,0])
         else:
-            flightinfo_lst.append([flight['aircraftregistration'],flight['scheduleddeparture'].date(),pd.Timedelta(0),1,0,1])
+            pass#   flightinfo_lst.append([flight['aircraftregistration'],flight['scheduleddeparture'].date(),pd.Timedelta(0),1,0,1])
 
         
 
@@ -372,7 +372,7 @@ DYR = extractDYR(FH)
 from dw import DW
 import duckdb
 
-'''dw = DW(create=True)
+dw = DW(create=True)
 con = duckdb.connect('dw.duckdb')
 con = dw.conn_duckdb
 con.register('timedim', timedim)
@@ -384,5 +384,19 @@ con.register('fact_util', FH)
 con.sql("INSERT INTO fact_utilization BY NAME SELECT * FROM fact_util")
 #TODO: anadir ADOSS, ADOSU a dw.py
 
-test = con.sql("SELECT * FROM fact_utilization")
-print(test)'''
+
+byyear = con.sql("""SELECT
+  a.aircraft,
+  a.model,
+  a.manufacturer,
+  d.day,
+  d.month,
+  d.year,
+  SUM(f.FH) AS FH_hours,
+  SUM(f.TO) AS TO_count
+FROM fact_utilization f, dim_date d, dim_aircraft a
+where f.date = d.date and f.aircraft = a.aircraft
+GROUP BY ROLLUP(a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day)
+ORDER BY a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day""")
+print("YEAR")
+print(byyear)
