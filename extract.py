@@ -284,8 +284,9 @@ def create_dim_aircraft():
 def create_dim_time():
     time_lst = []
     for date in pd.date_range("2023-01-01", "2024-12-31"):
-        time_lst.append([date, date.day, date.month, date.year])
-    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
+        time_lst.append([date, date.day, date.month, date.year, build_monthCode(date)])
+    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year', 'month_key'])
+    print(timedim.head())
     return timedim
         
 
@@ -293,6 +294,7 @@ def extract_flight():
     prev_flight = None
 
     flightinfo_lst = []
+    delay_lst = []
     for flight in tqdm(flightsource):
         # print(flight['aircraftregistration'], flight['actualdeparture'], flight['actualarrival'])
         if flight["cancelled"] == 0:
@@ -305,16 +307,18 @@ def extract_flight():
             # The date corresponds to the departure
             if flight['delaycode'] != None:
                 # aircraft, date, FH, TO, DY, CN
-                flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1,0,0])
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0])
             else:
-                flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH,1,1,0])
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0])
         else:
-            flightinfo_lst.append([flight['aircraftregistration'],flight['scheduleddeparture'].date(),pd.Timedelta(0),1,0,1])
+            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1])
 
         
 
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO', 'DYR', 'CNR'])
-    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum', 'DYR': 'sum', 'CNR': 'sum'})
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
+    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+
+    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'TDR', 'ADD'])
     print(flightinfo.head())
     return flightinfo
 
@@ -348,6 +352,7 @@ def extractDYR(FH):
                         query='select * from "AIMS".flights f;',
                         names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
     #TODO: no hi ha una altra manera d'utilitzar l'iterador? l'hem d'inicialitzar aixi un altre cop?
+    # TODO:Alternativa: carregar tot a memoria (sus)
     delay_lst = []
     for flight in tqdm(flightsource):
         #TODO: compute DYR, CNR, TDR, ADD
