@@ -6,6 +6,11 @@ from pygrametl.datasources import CSVSource, SQLSource
 from tqdm import tqdm
 import logging
 
+logging.basicConfig(
+    filename='cleaning.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
 
 # Connect to the PostgreSQL source
 path = Path("db_conf.txt")
@@ -46,6 +51,9 @@ logbooksource = SQLSource(connection=conn,
                         query='select * from "AMOS".technicallogbookorders t;',
                         names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
 
+postflightreportssource = SQLSource(connection=conn,
+                        query='select * from "AMOS".technicallogbookorders t;',
+                        names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
 
 manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=',')
 # aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
@@ -297,11 +305,16 @@ def extract_flight():
             if prev_flight is not None:
                 if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
                     # Business rule 2: if two flights are overlaping, ignore the first one
+                    logging.info(f"BR-21: Ignored overlapping flight {prev_flight['flightid']} ({prev_flight['aircraftregistration']}) overlapping with {flight['flightid']}")
                     flightinfo_lst.pop()
             prev_flight = flight
             # Business rule 1: arrival can not be posterior to departure
+            if flight["actualarrival"] <= flight["actualdeparture"]:
+                logging.info(f"BR-23: Swapped actualArrival and actualDeparture for flight {flight['flightid']} ({flight['aircraftregistration']})")
+                # flight["actualarrival"], flight["actualdeparture"] = flight["actualdeparture"], flight["actualarrival"] si queremos el swap
+
             FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
-            flightinfo_lst.append([flight['aircraftregistration'],build_dateCode(flight['actualdeparture']),FH, 1, build_monthCode(flight['actualdeparture'])])
+            flightinfo_lst.append([flight['aircraftregistration'],build_dateCode(flight['actualdeparture']),FH, 1])
 
             delay_time = flight['actualdeparture']-flight['scheduleddeparture']
             if (delay_time > pd.Timedelta(minutes=15)) and (delay_time < pd.Timedelta(hours=6)):
@@ -315,8 +328,8 @@ def extract_flight():
 
         
 
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO', 'date_month'])
-    flightinfo = flightinfo.groupby(['aircraft', 'date', 'date_month'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
+    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
     delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
