@@ -284,8 +284,8 @@ def create_dim_aircraft():
 def create_dim_time():
     time_lst = []
     for date in pd.date_range("2023-01-01", "2024-12-31"):
-        time_lst.append([date, date.day, date.month, date.year, build_monthCode(date)])
-    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year', 'month_key'])
+        time_lst.append([date, date.day, date.month, date.year])
+    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
     print(timedim.head())
     return timedim
         
