@@ -42,13 +42,10 @@ manteinancesource = SQLSource(connection=conn,
                         query='select * from "AIMS".maintenance m;',
                         names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','programmed') )
 
-slotssource = SQLSource(connection=conn,
-                        query='select * from "AIMS".slots s ;',
-                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind') )
-
 logbooksource = SQLSource(connection=conn,
                         query='select * from "AMOS".technicallogbookorders t;',
                         names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
+
 
 manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=',')
 # aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
@@ -304,7 +301,7 @@ def extract_flight():
             prev_flight = flight
             # Business rule 1: arrival can not be posterior to departure
             FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
-            flightinfo_lst.append([flight['aircraftregistration'],flight['actualdeparture'].date(),FH, 1])
+            flightinfo_lst.append([flight['aircraftregistration'],build_dateCode(flight['actualdeparture']),FH, 1, build_monthCode(flight['actualdeparture'])])
 
             delay_time = flight['actualdeparture']-flight['scheduleddeparture']
             if (delay_time > pd.Timedelta(minutes=15)) and (delay_time < pd.Timedelta(hours=6)):
@@ -318,8 +315,8 @@ def extract_flight():
 
         
 
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
-    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO', 'date_month'])
+    flightinfo = flightinfo.groupby(['aircraft', 'date', 'date_month'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
     delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
@@ -329,12 +326,11 @@ def extract_flight():
     delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
     # TODO: add and compute TDR
     print(flightinfo.head())
+    print(delayinfo.head())
     return flightinfo, delayinfo
 
 def extractADOS():
     # ADOS, ADOSS, ADOSU
-
-    outofservice = pd.DataFrame(columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU', 'ADIS'])
     ADO_lst = []
     for maint in tqdm(manteinancesource):
         #Converting days & hours to days with decimals
@@ -355,13 +351,31 @@ def extractADOS():
     print(ADO.head())
     return ADO
 
+def extract_logbook(FH):
+    reports_lst = [] # aircraft, date, pirep count, marep count
+    for report in tqdm(logbooksource):
+        if report['reporteurclass'] == 'MAREP':
+            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1])
+        else:
+            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0])
+    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR'])
+    reports = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
+    reports['R'] = reports['MR'] + reports['PR']
+#    for gr_report in reports:
+#        print(FH.query(f'aircraft == {gr_report[0]} and date_month == {gr_report[1]}'))
+#    print(reports.head())
+# TODO: trobar FH i TO de un aircraft un cert mes, fem query? Fem join? És necessaria la columna de date_month a extract_flight?
+
+    return reports
+    
+
 airdim = create_dim_aircraft()
 # TODO:Business rule 3: Check if aircraft registration in airdim set
 airdimset = set(airdim['aircraft'])
 timedim = create_dim_time()
 FH, DYR = extract_flight()
-print(DYR.head())
 ADOS = extractADOS()
+RR = extract_logbook(FH)
 
 
 #####################################################################################################
