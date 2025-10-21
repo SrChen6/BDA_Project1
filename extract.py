@@ -46,6 +46,7 @@ logbooksource = SQLSource(connection=conn,
                         query='select * from "AMOS".technicallogbookorders t;',
                         names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
 
+# TODO: change technicallogbookorders to postflightreports
 
 manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=',')
 # aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
