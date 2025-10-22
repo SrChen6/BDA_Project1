@@ -285,7 +285,6 @@ def create_dim_aircraft():
     aircraftdim = pd.DataFrame(aircraft_lst, columns=['aircraft', 'model', 'manufacturer'])
     return aircraftdim
 
-
 def create_dim_time():
     time_lst = []
     for date in pd.date_range("2023-01-01", "2024-12-31"):
@@ -365,25 +364,45 @@ def extractADOS():
     return ADO
 
 def extract_logbook(FH):
+    FH = FH.copy()
+    FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
+    FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
+    FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+
     reports_lst = [] # aircraft, date, pirep count, marep count
     for report in tqdm(logbooksource):
         if report['reporteurclass'] == 'MAREP':
-            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1])
+            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1, report['reporteurid']])
         else:
-            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0])
-    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR'])
+            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0, report['reporteurid']])
+    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
+
+
+    personnel_lst = list(personnelsource)
+    personnel = pd.DataFrame(personnel_lst[1:], columns=personnel_lst[0])
+    personnel['reporteurid'] = personnel['reporteurid'].apply(int)    
+    reports = pd.merge(reports, personnel)
     reports = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
     reports['R'] = reports['MR'] + reports['PR']
-#    for gr_report in reports:
-#        print(FH.query(f'aircraft == {gr_report[0]} and date_month == {gr_report[1]}'))
-#    print(reports.head())
-# TODO: trobar FH i TO de un aircraft un cert mes, fem query? Fem join? És necessaria la columna de date_month a extract_flight?
+    print(reports)
+    reports_date = pd.merge(reports, FH)
+    reports_date['RRh'] = 1000*reports_date['R']/reports_date['FH']
+    reports_date['RRc'] = 100*reports_date['R']/reports_date['TO']
+    reports_date['PRRh'] = 1000*reports_date['PR']/reports_date['FH']
+    reports_date['PRRc'] = 100*reports_date['PR']/reports_date['TO']
+    reports_date['MRRh'] = 1000*reports_date['MR']/reports_date['FH']
+    reports_date['MRRc'] = 100*reports_date['MR']/reports_date['TO']
+    print(reports_date[['aircraft', 'date', 'RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']])
+    # TODO: sus output for MRR's
 
+    # TODO: compute MRRh and MRRc for aircraft and airport
+    reports_airport = reports.groupby(['aircraft', 'airport'], as_index=False)
+    print(reports_airport)
     return reports
     
 
 airdim = create_dim_aircraft()
-# TODO:Business rule 3: Check if aircraft registration in airdim set
+# TODO:rule 3: Check if aircraft registration in airdim set
 airdimset = set(airdim['aircraft'])
 timedim = create_dim_time()
 FH, DYR = extract_flight()
