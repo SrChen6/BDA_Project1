@@ -380,12 +380,15 @@ def extract_logbook(FH):
 
     personnel_lst = list(personnelsource)
     personnel = pd.DataFrame(personnel_lst[1:], columns=personnel_lst[0])
-    personnel['reporteurid'] = personnel['reporteurid'].apply(int)    
-    reports = pd.merge(reports, personnel)
-    reports = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
+    personnel['reporteurid'] = personnel['reporteurid'].apply(int)
+
     reports['R'] = reports['MR'] + reports['PR']
-    print(reports)
     reports_date = pd.merge(reports, FH)
+
+    reports_airport = pd.merge(reports_date, personnel)
+    
+    reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'R': 'sum', 'FH': 'sum', 'TO': 'sum'})
+    print(reports_airport)
     reports_date['RRh'] = 1000*reports_date['R']/reports_date['FH']
     reports_date['RRc'] = 100*reports_date['R']/reports_date['TO']
     reports_date['PRRh'] = 1000*reports_date['PR']/reports_date['FH']
@@ -396,7 +399,10 @@ def extract_logbook(FH):
     # TODO: sus output for MRR's
 
     # TODO: compute MRRh and MRRc for aircraft and airport
-    reports_airport = reports.groupby(['aircraft', 'airport'], as_index=False)
+    print(reports_airport)
+    reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
+    reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
+    reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
     print(reports_airport)
     return reports
     
