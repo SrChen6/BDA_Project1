@@ -12,55 +12,64 @@ logging.basicConfig(
     format='%(asctime)s - %(message)s'
 )
 
-# Connect to the PostgreSQL source
-path = Path("db_conf.txt")
-if not path.is_file():
-    raise FileNotFoundError(f"Database configuration file '{path.absolute()}' not found.")
-try:
-    parameters = {}
-    # Read the database configuration from the provided txt file, line by line
-    with open(path, 'r') as f:
-        lines = f.readlines()
-        for line in lines:
-            parameters[line.split('=', 1)[0]] = line.split('=', 1)[1].strip()
-    conn = psycopg2.connect(
-        dbname=parameters['dbname'],
-        user=parameters['user'],
-        password=parameters['password'],
-        host=parameters['ip'],
-        port=parameters['port']
-    )
-except psycopg2.Error as e:
-    print(e)
-    raise ValueError(f"Unable to connect to the database: {parameters}")
-except Exception as e:
-    print(e)
-    raise ValueError(f"Database configuration file '{path.absolute()}' not properly formatted (check file 'db_conf.example.txt'.")
+def connect_postgres(config_path: str = 'db_conf.txt'):
+    # Connect to the PostgreSQL source
+    path = Path(config_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Database configuration file '{path.absolute()}' not found.")
+    try:
+        parameters = {}
+        # Read the database configuration from the provided txt file, line by line
+        with open(path, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                parameters[line.split('=', 1)[0]] = line.split('=', 1)[1].strip()
+        conn = psycopg2.connect(
+            dbname=parameters['dbname'],
+            user=parameters['user'],
+            password=parameters['password'],
+            host=parameters['ip'],
+            port=parameters['port']
+        )
+    except psycopg2.Error as e:
+        print(e)
+        raise ValueError(f"Unable to connect to the database: {parameters}")
+    except Exception as e:
+        print(e)
+        raise ValueError(f"Database configuration file '{path.absolute()}' not properly formatted (check file 'db_conf.example.txt'.")
 
 
+def extract_from_postgres(conn):
+    flightsource = SQLSource(connection=conn,
+                            query='select * from "AIMS".flights f;',
+                            names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
 
-flightsource = SQLSource(connection=conn,
-                        query='select * from "AIMS".flights f;',
-                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
+    maintenancesource = SQLSource(connection=conn,
+                            query='select * from "AIMS".maintenance m;',
+                            names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','programmed') )
 
-manteinancesource = SQLSource(connection=conn,
-                        query='select * from "AIMS".maintenance m;',
-                        names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','programmed') )
+    logbooksource = SQLSource(connection=conn,
+                            query='select * from "AMOS".technicallogbookorders t;',
+                            names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
 
-logbooksource = SQLSource(connection=conn,
-                        query='select * from "AMOS".technicallogbookorders t;',
-                        names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
-
-postflightreportssource = SQLSource(connection=conn,
-                        query='select * from "AMOS".technicallogbookorders t;',
-                        names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
-
-manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=',')
-# aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
-personnelsource = CSVSource(open('maintenance_personnel.csv', 'r'), delimiter=',')
-# reporteurid,airport
+    postflightreportssource = SQLSource(connection=conn,
+                            query='select * from "AMOS".technicallogbookorders t;',
+                            names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
+    return {"flight": flightsource, "maintenance": maintenancesource, "logbook": logbooksource, "postflight": postflightreportssource}
 
 
+def extract_from_csv():
+    manufacturerinfosource = CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=',')
+    # aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
+    personnelsource = CSVSource(open('maintenance_personnel.csv', 'r'), delimiter=',')
+    # reporteurid,airport
+    return {'manufacturerinfo': manufacturerinfo, 'personnel': personnelsource}
+
+def run_all_sources():
+    conn = connect_postgres()
+    sql_data = extract_from_postgres(conn)
+    csv_data = extract_from_csv()
+    return {**sql_data, **csv_data}
 
 # ====================================================================================================================================
 # Baseline queries
@@ -260,192 +269,3 @@ def query_reporting_per_role_baseline():
     result = cur.fetchall()
     cur.close()
     return result
-
-##################################################################################################################
-# Transform
-# Configure logging
-logging.basicConfig(
-    filename='cleaning.log',           # Log file name
-    level=logging.INFO,           # Logging level
-    format='%(message)s'  # Log message format
-)
-
-def build_dateCode(date) -> str:
-    return f"{date.year}-{date.month}-{date.day}"
-
-
-def build_monthCode(date) -> str:
-    return f"{date.year}-{str(date.month).zfill(2)}"
-
-
-def create_dim_aircraft():
-    aircraft_lst = []
-    for aircraft in manufacturerinfosource:
-            aircraft_lst.append([aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']])
-    aircraftdim = pd.DataFrame(aircraft_lst, columns=['aircraft', 'model', 'manufacturer'])
-    return aircraftdim
-
-def create_dim_time():
-    time_lst = []
-    for date in pd.date_range("2023-01-01", "2024-12-31"):
-        time_lst.append([date, date.day, date.month, date.year])
-    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
-    print(timedim.head())
-    return timedim
-        
-
-def extract_flight():
-    prev_flight = None
-
-    flightinfo_lst = []
-    delay_lst = []
-    for flight in tqdm(flightsource):
-        if flight["cancelled"] == 0:
-            if prev_flight is not None:
-                if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
-                    # Business rule 2: if two flights are overlaping, ignore the first one
-                    logging.info(f"BR-21: Ignored overlapping flight {prev_flight['flightid']} ({prev_flight['aircraftregistration']}) overlapping with {flight['flightid']}")
-                    flightinfo_lst.pop()
-            prev_flight = flight
-            # Business rule 1: arrival can not be posterior to departure
-            if flight["actualarrival"] <= flight["actualdeparture"]:
-                logging.info(f"BR-23: Swapped actualArrival and actualDeparture for flight {flight['flightid']} ({flight['aircraftregistration']})")
-                # flight["actualarrival"], flight["actualdeparture"] = flight["actualdeparture"], flight["actualarrival"] si queremos el swap
-
-            FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
-            flightinfo_lst.append([flight['aircraftregistration'],build_dateCode(flight['actualdeparture']),FH, 1])
-
-            delay_time = flight['actualdeparture']-flight['scheduleddeparture']
-            if (delay_time > pd.Timedelta(minutes=15)) and (delay_time < pd.Timedelta(hours=6)):
-                # The flight has been delayed
-                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0,delay_time/pd.Timedelta(minutes=1),1])
-            else:
-                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0,0,1])
-        else:
-            # The flight has been cancelled
-            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,1])
-
-        
-
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
-    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
-
-    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
-    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
-    #TODO: how to obtain TO for a certain month and aircraft
-    delayinfo['TDR'] = 100-((delayinfo['CNR']+delayinfo['DYR'])/delayinfo['TO'])*100
-    delayinfo['DYR'] = delayinfo['DYR']/delayinfo['TO']*100
-    delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
-    # TODO: add and compute TDR
-    print(flightinfo.head())
-    print(delayinfo.head())
-    return flightinfo, delayinfo
-
-def extractADOS():
-    # ADOS, ADOSS, ADOSU
-    ADO_lst = []
-    for maint in tqdm(manteinancesource):
-        #Converting days & hours to days with decimals
-        maint_H = (maint['scheduledarrival']-maint['scheduleddeparture'])/pd.Timedelta(days=1)
-        if maint['programmed'] == 1:
-            #The date corresponds to the departure
-            #If programmed, then it counts as ADOSS
-            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']), 
-                            maint_H, maint_H, 0])
-        else:
-            #If not programmed, then it counts as ADOSU
-            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']), 
-                            maint_H, 0, maint_H])
-    ADO = pd.DataFrame(ADO_lst, columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU'])
-    #TODO: ara mateix date està només en mesos, com ho afegim a la taula de dates, que inclou els dies?
-    ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOS': 'sum', 'ADOSS': 'sum', 'ADOSU': 'sum'})
-    ADO['ADIS'] = 365-ADO['ADOS']
-    print(ADO.head())
-    return ADO
-
-def extract_logbook(FH):
-    FH = FH.copy()
-    FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
-    FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
-    FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
-
-    reports_lst = [] # aircraft, date, pirep count, marep count
-    for report in tqdm(logbooksource):
-        if report['reporteurclass'] == 'MAREP':
-            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1, report['reporteurid']])
-        else:
-            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0, report['reporteurid']])
-    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
-
-
-    personnel_lst = list(personnelsource)
-    personnel = pd.DataFrame(personnel_lst[1:], columns=personnel_lst[0])
-    personnel['reporteurid'] = personnel['reporteurid'].apply(int)
-
-    reports['R'] = reports['MR'] + reports['PR']
-    reports_date = pd.merge(reports, FH)
-
-    reports_airport = pd.merge(reports_date, personnel)
-    
-    reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'R': 'sum', 'FH': 'sum', 'TO': 'sum'})
-    print(reports_airport)
-    reports_date['RRh'] = 1000*reports_date['R']/reports_date['FH']
-    reports_date['RRc'] = 100*reports_date['R']/reports_date['TO']
-    reports_date['PRRh'] = 1000*reports_date['PR']/reports_date['FH']
-    reports_date['PRRc'] = 100*reports_date['PR']/reports_date['TO']
-    reports_date['MRRh'] = 1000*reports_date['MR']/reports_date['FH']
-    reports_date['MRRc'] = 100*reports_date['MR']/reports_date['TO']
-    print(reports_date[['aircraft', 'date', 'RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']])
-    # TODO: sus output for MRR's
-
-    # TODO: compute MRRh and MRRc for aircraft and airport
-    print(reports_airport)
-    reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
-    reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
-    reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
-    print(reports_airport)
-    return reports
-    
-
-airdim = create_dim_aircraft()
-# TODO:rule 3: Check if aircraft registration in airdim set
-airdimset = set(airdim['aircraft'])
-timedim = create_dim_time()
-FH, DYR = extract_flight()
-ADOS = extractADOS()
-RR = extract_logbook(FH)
-
-
-#####################################################################################################
-
-from dw import DW
-import duckdb
-
-dw = DW(create=True)
-con = duckdb.connect('dw.duckdb')
-con = dw.conn_duckdb
-con.register('timedim', timedim)
-con.sql("INSERT INTO dim_date BY NAME SELECT * FROM timedim")
-con.register('airdim', airdim)
-con.sql("INSERT INTO dim_aircraft BY NAME SELECT * FROM airdim")
-
-con.register('fact_util', FH)
-con.sql("INSERT INTO fact_utilization BY NAME SELECT * FROM fact_util")
-#TODO: anadir ADOSS, ADOSU a dw.py
-
-
-byyear = con.sql("""SELECT
-  a.aircraft,
-  a.model,
-  a.manufacturer,
-  d.day,
-  d.month,
-  d.year,
-  SUM(f.FH) AS FH_hours,
-  SUM(f.TO) AS TO_count
-FROM fact_utilization f, dim_date d, dim_aircraft a
-where f.date = d.date and f.aircraft = a.aircraft
-GROUP BY ROLLUP(a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day)
-ORDER BY a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day""")
-print("YEAR")
-print(byyear)

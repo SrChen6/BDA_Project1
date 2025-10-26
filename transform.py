@@ -20,3 +20,173 @@ def build_monthCode(date) -> str:
 
 
 # TODO: Implement here all transforming functions
+# Dimensions
+
+## Aircraft
+def create_dim_aircraft(manufacturerinfosource):
+    aircraft_lst = []
+    for aircraft in manufacturerinfosource:
+            aircraft_lst.append([aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']])
+    aircraftdim = pd.DataFrame(aircraft_lst, columns=['aircraft', 'model', 'manufacturer'])
+    return aircraftdim
+
+## Airport
+def create_dim_airport(personnelsource):
+    personnel_lst = list(personnelsource)
+    personnel = pd.DataFrame(personnel_lst[1:], columns=personnel_lst[0])
+    personnel['reporteurid'] = personnel['reporteurid'].apply(int)
+    return personnel
+
+
+## Daily
+def create_dim_daily():
+    time_lst = []
+    for date in pd.date_range("2023-01-01", "2024-12-31"):
+        time_lst.append([date, date.day, date.month, date.year])
+    timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
+    print(timedim.head())
+    return timedim
+
+## Monthly
+def create_dim_monthly():
+    time_lst = []
+    for date in pd.date_range("2023-01-01", "2024-12-31", freq="MS"):
+        time_lst.append([build_monthCode(date), date.month, date.year])
+    timedim = pd.DataFrame(time_lst, columns=['date', 'month', 'year'])
+    print(timedim.head())
+    return timedim
+
+
+def extract_flight(flightsource):
+    prev_flight = None
+
+    flightinfo_lst = []
+    delay_lst = []
+    for flight in tqdm(flightsource):
+        if flight["cancelled"] == 0:
+            if prev_flight is not None:
+                if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
+                    # Business rule 2: if two flights are overlaping, ignore the first one
+                    logging.info(f"BR-21: Ignored overlapping flight {prev_flight['flightid']} ({prev_flight['aircraftregistration']}) overlapping with {flight['flightid']}")
+                    flightinfo_lst.pop()
+            prev_flight = flight
+            # Business rule 1: arrival can not be posterior to departure
+            if flight["actualarrival"] <= flight["actualdeparture"]:
+                logging.info(f"BR-23: Swapped actualArrival and actualDeparture for flight {flight['flightid']} ({flight['aircraftregistration']})")
+                # flight["actualarrival"], flight["actualdeparture"] = flight["actualdeparture"], flight["actualarrival"] si queremos el swap
+
+            FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
+            flightinfo_lst.append([flight['aircraftregistration'],build_dateCode(flight['actualdeparture']),FH, 1])
+
+            delay_time = flight['actualdeparture']-flight['scheduleddeparture']
+            if (delay_time > pd.Timedelta(minutes=15)) and (delay_time < pd.Timedelta(hours=6)):
+                # The flight has been delayed
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0,delay_time/pd.Timedelta(minutes=1),1])
+            else:
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0,0,1])
+        else:
+            # The flight has been cancelled
+            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,1])
+
+
+
+    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
+    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+
+    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
+    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
+    #TODO: how to obtain TO for a certain month and aircraft
+    delayinfo['TDR'] = 100-((delayinfo['CNR']+delayinfo['DYR'])/delayinfo['TO'])*100
+    delayinfo['DYR'] = delayinfo['DYR']/delayinfo['TO']*100
+    delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
+    # TODO: add and compute TDR
+    print(flightinfo.head())
+    print(delayinfo.head())
+    return flightinfo, delayinfo
+
+def extractADOS():
+    # ADOS, ADOSS, ADOSU
+    ADO_lst = []
+    for maint in tqdm(manteinancesource):
+        #Converting days & hours to days with decimals
+        maint_H = (maint['scheduledarrival']-maint['scheduleddeparture'])/pd.Timedelta(days=1)
+        if maint['programmed'] == 1:
+            #The date corresponds to the departure
+            #If programmed, then it counts as ADOSS
+            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']),
+                            maint_H, maint_H, 0])
+        else:
+            #If not programmed, then it counts as ADOSU
+            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']),
+                            maint_H, 0, maint_H])
+    ADO = pd.DataFrame(ADO_lst, columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU'])
+    #TODO: ara mateix date està només en mesos, com ho afegim a la taula de dates, que inclou els dies?
+    ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOS': 'sum', 'ADOSS': 'sum', 'ADOSU': 'sum'})
+    ADO['ADIS'] = 365-ADO['ADOS']
+    print(ADO.head())
+    return ADO
+
+def extract_logbook(FH):
+    FH = FH.copy()
+    FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
+    FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
+    FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+
+    reports_lst = [] # aircraft, date, pirep count, marep count
+    for report in tqdm(logbooksource):
+        if report['reporteurclass'] == 'MAREP':
+            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0, report['reporteurid']])
+        else:
+            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1, report['reporteurid']])
+    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
+
+    personnel_lst = list(personnelsource)
+    personnel = pd.DataFrame(personnel_lst[1:], columns=personnel_lst[0])
+    personnel['reporteurid'] = personnel['reporteurid'].apply(int)
+
+    reports['R'] = reports['MR'] + reports['PR']
+    reports_date = pd.merge(reports, FH)
+
+    reports_airport = pd.merge(reports_date, personnel, on="reporteurid")
+
+    reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'R': 'sum', 'FH': 'sum', 'TO': 'sum'})
+
+    reports_date['RRh'] = 1000*reports_date['R']/reports_date['FH']
+    reports_date['RRc'] = 100*reports_date['R']/reports_date['TO']
+    reports_date['PRRh'] = 1000*reports_date['PR']/reports_date['FH']
+    reports_date['PRRc'] = 100*reports_date['PR']/reports_date['TO']
+    reports_date['MRRh'] = 1000*reports_date['MR']/reports_date['FH']
+    reports_date['MRRc'] = 100*reports_date['MR']/reports_date['TO']
+    print("REPORTS DATE")
+    print(reports_date)
+    print(reports_date[['aircraft', 'date', 'RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']])
+    # TODO: sus output for MRR's
+
+    # TODO: compute MRRh and MRRc for aircraft and airport
+    print(reports_airport)
+    reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
+    reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
+    reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
+    print(reports_airport)
+    return reports
+
+
+airdim = create_dim_aircraft()
+# TODO:rule 3: Check if aircraft registration in airdim set
+airdimset = set(airdim['aircraft'])
+timedim = create_dim_time()
+FH, DYR = extract_flight()
+ADOS = extractADOS()
+RR = extract_logbook(FH)
+
+
+
+def run_all_transformations(raw_data: dict):
+    airdim = create_dim_aircraft(raw_data["manufacturerinfo"])
+    airport = create_dim_aircraft(raw_data["personnel"])
+    dailydim = create_dim_daily()
+    monthlydim = create_dim_monthly()
+
+    flights = transform_flights(raw_data['flights'])
+    maintenance = transform_maintenance(raw_data['maintenance'])
+    return {'flights': flights, 'maintenance': maintenance}
