@@ -34,109 +34,158 @@ class DW:
 
     def _create_schema(self):
         self.conn_duckdb.execute("""
-        CREATE TABLE dim_date (
+        CREATE TABLE dim_date_day (
             date DATE PRIMARY KEY,
             day INTEGER,
             month INTEGER,
             year INTEGER
         );
-
-        CREATE TABLE dim_aircraft (
+        CREATE TABLE dim_date_month (
+            date TEXT PRIMARY KEY,
+            month INTEGER,
+            year INTEGER
+        );
+        CREATE TABLE dim_plane (
             aircraft TEXT PRIMARY KEY,
             model TEXT,
             manufacturer TEXT
         );
 
         CREATE TABLE dim_airport (
-            airport_id INTEGER PRIMARY KEY,
-            airport_code TEXT,
-            airport_name TEXT,
-            country TEXT
+            airport TEXT PRIMARY KEY
         );
 
-        CREATE TABLE dim_personnel (
-            personnel_id INTEGER PRIMARY KEY,
-            name TEXT,
-            role TEXT, -- 'Pilot' or 'Maintenance'
-            airport_id INTEGER,
-            FOREIGN KEY (airport_id) REFERENCES dim_airport(airport_id)
-        );
-
-        CREATE TABLE fact_utilization (
+        CREATE TABLE fact_flight_daily (
             aircraft TEXT,
             date DATE,
+            PRIMARY KEY (aircraft, date),
             FH DOUBLE,  -- Flight Hours
             "TO" INTEGER, -- Take-Offs
-            ADIS DOUBLE,
-            ADOS DOUBLE,
-            DYR DOUBLE,
-            CNR DOUBLE,
-            PRIMARY KEY (aircraft, date),
-            FOREIGN KEY (aircraft) REFERENCES dim_aircraft(aircraft),
-            FOREIGN KEY (date) REFERENCES dim_date(date)
+            FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
+            FOREIGN KEY (date) REFERENCES dim_date_day(date)
+
         );
 
-        CREATE TABLE fact_reporting (
-            report_id INTEGER PRIMARY KEY,
+        CREATE TABLE fact_flight_monthly (
             aircraft TEXT,
-            personnel_id INTEGER,
-            date DATE,
+            date TEXT,
+            ADIS DOUBLE,
+            ADOS DOUBLE,
+            ADOSS DOUBLE,
+            ADOSU DOUBLE,
+            DYR DOUBLE,
+            CNR DOUBLE,
+            TDR DOUBLE,
+            ADD DOUBLE,
+            "TO" INTEGER,
+            PRIMARY KEY (aircraft, date),
+            FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
+            FOREIGN KEY (date) REFERENCES dim_date_month(date)
+        );
+
+        CREATE TABLE fact_reports_monthly (
+            aircraft TEXT,
+            date TEXT,
             RRh DOUBLE,
             RRc DOUBLE,
             PRRh DOUBLE,
             PRRc DOUBLE,
             MRRh DOUBLE,
             MRRc DOUBLE,
-            FOREIGN KEY (aircraft) REFERENCES dim_aircraft(aircraft),
-            FOREIGN KEY (personnel_id) REFERENCES dim_personnel(personnel_id),
-            FOREIGN KEY (date ) REFERENCES dim_date(date )
+            PRIMARY KEY (aircraft, date),
+            FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
+            FOREIGN KEY (date) REFERENCES dim_date_month(date)
+        );
+
+        CREATE TABLE fact_reports_airport (
+            aircraft TEXT,
+            airport TEXT,
+            MRRh DOUBLE,
+            MRRc DOUBLE,
+            PRIMARY KEY (aircraft, airport),
+            FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
+            FOREIGN KEY (airport) REFERENCES dim_airport(airport)
         );
         """)
 
     # =========================================================================================================
     def _declare_tables(self):
-        self.dim_date = CachedDimension(
-            name='dim_date',
-            key='date ',
-            attributes=['date','day', 'month', 'year'],
+        # Dimension tables
+        self.dim_date_day = CachedDimension(
+            name='dim_date_day',
+            key='date',
+            attributes=['date', 'day', 'month', 'year'],
             lookupatts=['date']
         )
 
-        self.dim_aircraft = CachedDimension(
-            name='dim_aircraft',
+        self.dim_date_month = CachedDimension(
+            name='dim_date_month',
+            key='date',
+            attributes=['date', 'month', 'year'],
+            lookupatts=['date']
+        )
+
+        self.dim_plane = CachedDimension(
+            name='dim_plane',
             key='aircraft',
-            attributes=['registration_code', 'manufacturer_code', 'model', 'manufacturer'],
-            lookupatts=['registration_code']
+            attributes=['aircraft', 'model', 'manufacturer'],
+            lookupatts=['aircraft']
         )
 
         self.dim_airport = CachedDimension(
             name='dim_airport',
-            key='airport_id',
-            attributes=['airport_code', 'airport_name', 'country'],
-            lookupatts=['airport_code']
+            key='airport',
+            attributes=['airport'],
+            lookupatts=['airport']
         )
 
-        self.dim_personnel = CachedDimension(
-            name='dim_personnel',
-            key='personnel_id',
-            attributes=['name', 'role', 'airport_id'],
-            lookupatts=['name']
+        # Fact tables
+        self.fact_flight_daily = FactTable(
+            name='fact_flight_daily',
+            keyrefs=['aircraft', 'date'],
+            measures=['FH', 'TO']
         )
 
-        self.fact_utilization = FactTable(
-            name='fact_utilization',
-            keyrefs=['aircraft', 'date '],
-            measures=['FH', 'TO', 'ADIS', 'ADOS', 'DYR', 'CNR']
+        self.fact_flight_monthly = FactTable(
+            name='fact_flight_monthly',
+            keyrefs=['aircraft', 'date'],
+            measures=[
+                'ADIS', 'ADOS', 'ADOSS', 'ADOSU',
+                'DYR', 'CNR', 'TDR', 'ADD', 'TO'
+            ]
         )
 
-        self.fact_reporting = FactTable(
-            name='fact_reporting',
-            keyrefs=['aircraft', 'personnel_id', 'date '],
+        self.fact_reports_monthly = FactTable(
+            name='fact_reports_monthly',
+            keyrefs=['aircraft', 'date'],
             measures=['RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']
+        )
+
+        self.fact_reports_airport = FactTable(
+            name='fact_reports_airport',
+            keyrefs=['aircraft', 'airport'],
+            measures=['MRRh', 'MRRc']
         )
 
 
     # TODO: Rewrite the queries exemplified in "extract.py"
+
+    def query_test(self):
+        result = self.conn_duckdb.execute("""SELECT
+        a.aircraft,
+        a.model,
+        a.manufacturer,
+        d.day,
+        d.month,
+        d.year,
+        SUM(f.FH) AS FH_hours,
+        SUM(f.TO) AS TO_count
+        FROM fact_flight_daily f, dim_date_day d, dim_plane a
+        where f.date = d.date and f.aircraft = a.aircraft
+        GROUP BY ROLLUP(a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day)
+        ORDER BY a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day""").fetchall()
+        return result
+
     def query_utilization(self):
         result = self.conn_duckdb.execute("""
             SELECT ...

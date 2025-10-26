@@ -26,7 +26,7 @@ def build_monthCode(date) -> str:
 def create_dim_aircraft(manufacturerinfosource):
     aircraft_lst = []
     for aircraft in manufacturerinfosource:
-            aircraft_lst.append([aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']])
+        aircraft_lst.append([aircraft['aircraft_reg_code'], aircraft['aircraft_model'], aircraft['aircraft_manufacturer']])
     aircraftdim = pd.DataFrame(aircraft_lst, columns=['aircraft', 'model', 'manufacturer'])
     return aircraftdim
 
@@ -44,7 +44,6 @@ def create_dim_daily():
     for date in pd.date_range("2023-01-01", "2024-12-31"):
         time_lst.append([date, date.day, date.month, date.year])
     timedim = pd.DataFrame(time_lst, columns=['date', 'day', 'month', 'year'])
-    print(timedim.head())
     return timedim
 
 ## Monthly
@@ -53,11 +52,10 @@ def create_dim_monthly():
     for date in pd.date_range("2023-01-01", "2024-12-31", freq="MS"):
         time_lst.append([build_monthCode(date), date.month, date.year])
     timedim = pd.DataFrame(time_lst, columns=['date', 'month', 'year'])
-    print(timedim.head())
     return timedim
 
 
-def transform_flights(flightsource):
+def transform_flights(flightsource, manteinancesource):
     prev_flight = None
 
     flightinfo_lst = []
@@ -90,8 +88,8 @@ def transform_flights(flightsource):
 
 
 
-    flightinfo = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
-    flightinfo = flightinfo.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+    flightdaily = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
+    flightdaily = flightdaily.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
     delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
@@ -100,11 +98,7 @@ def transform_flights(flightsource):
     delayinfo['DYR'] = delayinfo['DYR']/delayinfo['TO']*100
     delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
     # TODO: add and compute TDR
-    print(flightinfo.head())
-    print(delayinfo.head())
-    return flightinfo, delayinfo
 
-def extractADOS():
     # ADOS, ADOSS, ADOSU
     ADO_lst = []
     for maint in tqdm(manteinancesource):
@@ -123,10 +117,12 @@ def extractADOS():
     #TODO: ara mateix date està només en mesos, com ho afegim a la taula de dates, que inclou els dies?
     ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOS': 'sum', 'ADOSS': 'sum', 'ADOSU': 'sum'})
     ADO['ADIS'] = 365-ADO['ADOS']
-    print(ADO.head())
-    return ADO
 
-def transform_logbook(FH):
+    flightmonthly = pd.merge(ADO, delayinfo, on= ["aircraft", "date"])
+
+    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADIS', 'ADOS', 'ADOSS', 'ADOSU', 'DYR', 'CNR', 'TDR', 'ADD', 'TO']]
+
+def transform_logbook(FH, logbooksource, personnel, airdimset):
     FH = FH.copy()
     FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
     FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
@@ -134,19 +130,20 @@ def transform_logbook(FH):
 
     reports_lst = [] # aircraft, date, pirep count, marep count
     for report in tqdm(logbooksource):
-        if report['reporteurclass'] == 'MAREP':
-            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0, report['reporteurid']])
+        # business rule 3: Check if aircraft registration in airdim set
+        if report['aircraftregistration'] in airdimset:
+            if report['reporteurclass'] == 'MAREP':
+                reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0, report['reporteurid']])
+            else:
+                reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1, report['reporteurid']])
         else:
-            reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1, report['reporteurid']])
-    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
+            print(f"AAA {report['aircraftregistration']}")
+            logging.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension. Ignoring row {report} ")
 
-    personnel_lst = list(personnelsource)
-    personnel = pd.DataFrame(personnel_lst[1:], columns=personnel_lst[0])
-    personnel['reporteurid'] = personnel['reporteurid'].apply(int)
+    reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
 
     reports['R'] = reports['MR'] + reports['PR']
     reports_date = pd.merge(reports, FH)
-
     reports_airport = pd.merge(reports_date, personnel, on="reporteurid")
 
     reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'R': 'sum', 'FH': 'sum', 'TO': 'sum'})
@@ -163,9 +160,9 @@ def transform_logbook(FH):
     reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
     reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
     reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
-    return reports_date, reports_airport
+    return reports_date[['aircraft', 'date', 'RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']], reports_airport[['aircraft', 'airport', 'MRRh', 'MRRc']]
 
-
+"""
 airdim = create_dim_aircraft()
 # TODO:rule 3: Check if aircraft registration in airdim set
 airdimset = set(airdim['aircraft'])
@@ -173,15 +170,33 @@ timedim = create_dim_time()
 FH, DYR = extract_flight()
 ADOS = extractADOS()
 RR = extract_logbook(FH)
-
+"""
 
 
 def run_all_transformations(raw_data: dict):
     airdim = create_dim_aircraft(raw_data["manufacturerinfo"])
-    airport = create_dim_aircraft(raw_data["personnel"])
+    airport = create_dim_airport(raw_data["personnel"])
     dailydim = create_dim_daily()
     monthlydim = create_dim_monthly()
 
-    flight_daily, _ = transform_flights(raw_data['flights'])
-    reports_monthly, reports_airport = transform_logbook(flight_daily)
-    return {'flight_daily': flight_daily, 'flight_monthly': flight_monthly, 'reports_monthly': reports_monthly, 'reports_airport', reports_airport}
+    airdimset = set(airdim['aircraft'])
+
+    flight_daily, flight_monthly = transform_flights(raw_data['flights'], raw_data['maintenance'])
+    reports_monthly, reports_airport = transform_logbook(flight_daily, raw_data['logbook'],airport, airdimset)
+    """print("ALL TABLES\n++++++++++++++++++++++++++++++++++++++")
+    print(airdim)
+    print(airport)
+    print(dailydim)
+    print(monthlydim)
+    print(flight_daily)
+    print(flight_monthly)
+    print(reports_monthly)
+    print(reports_airport)"""
+    return {"aircraft": airdim,
+            "airport": pd.DataFrame({'airport': airport["airport"].unique()}),
+            "daily": dailydim,
+            "monthly": monthlydim,
+            'flight_daily': flight_daily,
+            'flight_monthly': flight_monthly,
+            'reports_monthly': reports_monthly,
+            'reports_airport': reports_airport}

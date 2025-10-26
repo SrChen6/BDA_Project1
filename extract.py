@@ -37,7 +37,7 @@ def connect_postgres(config_path: str = 'db_conf.txt'):
     except Exception as e:
         print(e)
         raise ValueError(f"Database configuration file '{path.absolute()}' not properly formatted (check file 'db_conf.example.txt'.")
-
+    return conn
 
 def extract_from_postgres(conn):
     flightsource = SQLSource(connection=conn,
@@ -55,7 +55,7 @@ def extract_from_postgres(conn):
     postflightreportssource = SQLSource(connection=conn,
                             query='select * from "AMOS".technicallogbookorders t;',
                             names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
-    return {"flight": flightsource, "maintenance": maintenancesource, "logbook": logbooksource, "postflight": postflightreportssource}
+    return {"flights": flightsource, "maintenance": maintenancesource, "logbook": logbooksource, "postflight": postflightreportssource}
 
 
 def extract_from_csv():
@@ -63,7 +63,7 @@ def extract_from_csv():
     # aircraft_reg_code,manufacturer_serial_number,aircraft_model,aircraft_manufacturer
     personnelsource = CSVSource(open('maintenance_personnel.csv', 'r'), delimiter=',')
     # reporteurid,airport
-    return {'manufacturerinfo': manufacturerinfo, 'personnel': personnelsource}
+    return {'manufacturerinfo': manufacturerinfosource, 'personnel': personnelsource}
 
 def run_all_sources():
     conn = connect_postgres()
@@ -76,13 +76,12 @@ def run_all_sources():
 def get_aircrafts_per_manufacturer() -> dict[str, list[str]]:
     # TODO: Implement a function to generate a dictionary with one entry per manufacturer and a list of aircraft identifiers as values
     result: dict[str, list[str]] = {}
-    for row in manufacturerinfosource:
+    for row in CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=','):
         # row is a dict-like object: row['aircraft_reg_code'], row['aircraft_manufacturer'], etc.
         reg = row.get('aircraft_reg_code')
         manufacturer = row.get('aircraft_manufacturer')
         if reg is None or manufacturer is None:
             # skip or log
-            print('AAAAAAAAAAAAAAAAAAAAAAA')
             continue
         # Insert into the list
         if manufacturer not in result:
@@ -92,21 +91,22 @@ def get_aircrafts_per_manufacturer() -> dict[str, list[str]]:
 
 def query_utilization_baseline():
     aircrafts = get_aircrafts_per_manufacturer()
+    conn = connect_postgres()
     cur = conn.cursor()
     cur.execute(f"""
         WITH atomic_data AS (
             SELECT f.aircraftregistration,
-                CASE 
+                CASE
                     WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Airbus", []))}') THEN 'Airbus'
                     WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Boeing", []))}') THEN 'Boeing'
                     ELSE f.aircraftregistration
-                    END AS manufacturer, 
+                    END AS manufacturer,
                 DATE_PART('year', f.scheduleddeparture)::text AS year,
-                CASE WHEN f.cancelled 
+                CASE WHEN f.cancelled
                     THEN 0
                     ELSE EXTRACT(EPOCH FROM f.actualarrival-f.actualdeparture) / 3600
                     END AS flightHours,
-                CASE WHEN f.cancelled 
+                CASE WHEN f.cancelled
                     THEN 0
                     ELSE 1
                     END AS flightCycles,
@@ -132,12 +132,12 @@ def query_utilization_baseline():
                 0 AS unScheduledOutOfService
             FROM "AIMS".flights f
             UNION ALL
-            SELECT m.aircraftregistration,           
-                CASE 
+            SELECT m.aircraftregistration,
+                CASE
                     WHEN m.aircraftregistration in ('{"','".join(aircrafts.get("Airbus", []))}') THEN 'Airbus'
                     WHEN m.aircraftregistration in ('{"','".join(aircrafts.get("Boeing", []))}') THEN 'Boeing'
                     ELSE m.aircraftregistration
-                    END AS manufacturer, 
+                    END AS manufacturer,
                 DATE_PART('year', m.scheduleddeparture)::text AS year,
                 0 AS flightHours,
                 0 AS flightCycles,
@@ -154,7 +154,7 @@ def query_utilization_baseline():
                     END AS unScheduledOutOfService
             FROM "AIMS".maintenance m
             )
-        SELECT a.manufacturer, a.year, 
+        SELECT a.manufacturer, a.year,
             ROUND(SUM(a.flightHours)/COUNT(DISTINCT a.aircraftregistration), 2) AS FH,
             ROUND(SUM(a.flightCycles)/COUNT(DISTINCT a.aircraftregistration), 2) AS TakeOff,
             ROUND(SUM(a.scheduledOutOfService)/COUNT(DISTINCT a.aircraftregistration), 2) AS ADOSS,
@@ -177,22 +177,23 @@ def query_utilization_baseline():
 
 def query_reporting_baseline():
     aircrafts = get_aircrafts_per_manufacturer()
+    conn = connect_postgres()
     cur = conn.cursor()
     cur.execute(f"""
-        WITH 
+        WITH
             atomic_data_utilization AS (
                 SELECT
-                    CASE 
+                    CASE
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Airbus", []))}') THEN 'Airbus'
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Boeing", []))}') THEN 'Boeing'
                         ELSE f.aircraftregistration
-                        END AS manufacturer, 
+                        END AS manufacturer,
                     DATE_PART('year', f.scheduleddeparture)::text AS year,
-                    CAST(SUM(CASE WHEN f.cancelled 
+                    CAST(SUM(CASE WHEN f.cancelled
                         THEN 0
                         ELSE EXTRACT(EPOCH FROM f.actualarrival-f.actualdeparture) / 3600
                         END) AS numeric) AS flightHours,
-                    CAST(SUM(CASE WHEN f.cancelled 
+                    CAST(SUM(CASE WHEN f.cancelled
                         THEN 0
                         ELSE 1
                         END) AS numeric) AS flightCycles
@@ -201,11 +202,11 @@ def query_reporting_baseline():
                 ),
             atomic_data_reporting AS (
                 SELECT
-                    CASE 
+                    CASE
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Airbus", []))}') THEN 'Airbus'
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Boeing", []))}') THEN 'Boeing'
                         ELSE f.aircraftregistration
-                        END AS manufacturer, 
+                        END AS manufacturer,
                     DATE_PART('year', f.reportingdate)::text AS year,
                     COUNT(*) AS counter
                 FROM "AMOS".postflightreports f
@@ -213,7 +214,7 @@ def query_reporting_baseline():
                 )
         SELECT f1.manufacturer, f1.year,
             1000*ROUND(f1.counter/f2.flightHours, 3) AS RRh,
-            100*ROUND(f1.counter/f2.flightCycles, 2) AS RRc               
+            100*ROUND(f1.counter/f2.flightCycles, 2) AS RRc
         FROM atomic_data_reporting f1
             JOIN atomic_data_utilization f2 ON f2.manufacturer = f1.manufacturer AND f1.year = f2.year
         ORDER BY f1.manufacturer, f1.YEAR;
@@ -224,22 +225,23 @@ def query_reporting_baseline():
 
 def query_reporting_per_role_baseline():
     aircrafts = get_aircrafts_per_manufacturer()
+    conn = connect_postgres()
     cur = conn.cursor()
     cur.execute(f"""
-        WITH 
+        WITH
             atomic_data_utilization AS (
                 SELECT
-                    CASE 
+                    CASE
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Airbus", []))}') THEN 'Airbus'
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Boeing", []))}') THEN 'Boeing'
                         ELSE f.aircraftregistration
-                        END AS manufacturer, 
+                        END AS manufacturer,
                     DATE_PART('year', f.scheduleddeparture)::text AS year,
-                    CAST(SUM(CASE WHEN f.cancelled 
+                    CAST(SUM(CASE WHEN f.cancelled
                         THEN 0
                         ELSE EXTRACT(EPOCH FROM f.actualarrival-f.actualdeparture) / 3600
                         END) AS numeric) AS flightHours,
-                    CAST(SUM(CASE WHEN f.cancelled 
+                    CAST(SUM(CASE WHEN f.cancelled
                         THEN 0
                         ELSE 1
                         END) AS numeric) AS flightCycles
@@ -248,11 +250,11 @@ def query_reporting_per_role_baseline():
                 ),
             atomic_data_reporting AS (
                 SELECT
-                    CASE 
+                    CASE
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Airbus", []))}') THEN 'Airbus'
                         WHEN f.aircraftregistration in ('{"','".join(aircrafts.get("Boeing", []))}') THEN 'Boeing'
                         ELSE f.aircraftregistration
-                        END AS manufacturer, 
+                        END AS manufacturer,
                     DATE_PART('year', f.reportingdate)::text AS year,
                     f.reporteurclass AS role,
                     COUNT(*) AS counter
@@ -261,7 +263,7 @@ def query_reporting_per_role_baseline():
                 )
         SELECT f1.manufacturer, f1.year, f1.role,
             1000*ROUND(f1.counter/f2.flightHours, 3) AS RRh,
-            100*ROUND(f1.counter/f2.flightCycles, 2) AS RRc              
+            100*ROUND(f1.counter/f2.flightCycles, 2) AS RRc
         FROM atomic_data_reporting f1
             JOIN atomic_data_utilization f2 ON f2.manufacturer = f1.manufacturer AND f1.year = f2.year
         ORDER BY f1.manufacturer, f1.year, f1.role;
