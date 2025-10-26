@@ -74,7 +74,6 @@ def run_all_sources():
 # ====================================================================================================================================
 # Baseline queries
 def get_aircrafts_per_manufacturer() -> dict[str, list[str]]:
-    # TODO: Implement a function to generate a dictionary with one entry per manufacturer and a list of aircraft identifiers as values
     result: dict[str, list[str]] = {}
     for row in CSVSource(open('aircraft-manufaturerinfo-lookup.csv', 'r'), delimiter=','):
         # row is a dict-like object: row['aircraft_reg_code'], row['aircraft_manufacturer'], etc.

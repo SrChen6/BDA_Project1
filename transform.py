@@ -19,9 +19,6 @@ def build_monthCode(date) -> str:
     return f"{date.year}{str(date.month).zfill(2)}"
 
 
-# TODO: Implement here all transforming functions
-# Dimensions
-
 ## Aircraft
 def create_dim_aircraft(manufacturerinfosource):
     aircraft_lst = []
@@ -57,9 +54,8 @@ def create_dim_monthly():
 
 def transform_flights(flightsource, manteinancesource):
     prev_flight = None
-
     flightinfo_lst = []
-    delay_lst = []
+    delay_lst = [] 
     for flight in tqdm(flightsource):
         if flight["cancelled"] == 0:
             if prev_flight is not None:
@@ -86,18 +82,14 @@ def transform_flights(flightsource, manteinancesource):
             # The flight has been cancelled
             delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,1])
 
-
-
     flightdaily = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
     flightdaily = flightdaily.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
     delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
-    #TODO: how to obtain TO for a certain month and aircraft
     delayinfo['TDR'] = 100-((delayinfo['CNR']+delayinfo['DYR'])/delayinfo['TO'])*100
     delayinfo['DYR'] = delayinfo['DYR']/delayinfo['TO']*100
     delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
-    # TODO: add and compute TDR
 
     # ADOS, ADOSS, ADOSU
     ADO_lst = []
@@ -114,7 +106,6 @@ def transform_flights(flightsource, manteinancesource):
             ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']),
                             maint_H, 0, maint_H])
     ADO = pd.DataFrame(ADO_lst, columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU'])
-    #TODO: ara mateix date està només en mesos, com ho afegim a la taula de dates, que inclou els dies?
     ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOS': 'sum', 'ADOSS': 'sum', 'ADOSU': 'sum'})
     ADO['ADIS'] = 365-ADO['ADOS']
 
@@ -154,9 +145,7 @@ def transform_logbook(FH, logbooksource, personnel, airdimset):
     reports_date['PRRc'] = 100*reports_date['PR']/reports_date['TO']
     reports_date['MRRh'] = 1000*reports_date['MR']/reports_date['FH']
     reports_date['MRRc'] = 100*reports_date['MR']/reports_date['TO']
-    # TODO: sus output for MRR's
 
-    # TODO: compute MRRh and MRRc for aircraft and airport
     reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
     reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
     reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
