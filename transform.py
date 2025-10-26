@@ -57,7 +57,7 @@ def create_dim_monthly():
     return timedim
 
 
-def extract_flight(flightsource):
+def transform_flights(flightsource):
     prev_flight = None
 
     flightinfo_lst = []
@@ -126,7 +126,7 @@ def extractADOS():
     print(ADO.head())
     return ADO
 
-def extract_logbook(FH):
+def transform_logbook(FH):
     FH = FH.copy()
     FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
     FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
@@ -157,18 +157,13 @@ def extract_logbook(FH):
     reports_date['PRRc'] = 100*reports_date['PR']/reports_date['TO']
     reports_date['MRRh'] = 1000*reports_date['MR']/reports_date['FH']
     reports_date['MRRc'] = 100*reports_date['MR']/reports_date['TO']
-    print("REPORTS DATE")
-    print(reports_date)
-    print(reports_date[['aircraft', 'date', 'RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']])
     # TODO: sus output for MRR's
 
     # TODO: compute MRRh and MRRc for aircraft and airport
-    print(reports_airport)
     reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
     reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
     reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
-    print(reports_airport)
-    return reports
+    return reports_date, reports_airport
 
 
 airdim = create_dim_aircraft()
@@ -187,6 +182,6 @@ def run_all_transformations(raw_data: dict):
     dailydim = create_dim_daily()
     monthlydim = create_dim_monthly()
 
-    flights = transform_flights(raw_data['flights'])
-    maintenance = transform_maintenance(raw_data['maintenance'])
-    return {'flights': flights, 'maintenance': maintenance}
+    flight_daily, _ = transform_flights(raw_data['flights'])
+    reports_monthly, reports_airport = transform_logbook(flight_daily)
+    return {'flight_daily': flight_daily, 'flight_monthly': flight_monthly, 'reports_monthly': reports_monthly, 'reports_airport', reports_airport}
