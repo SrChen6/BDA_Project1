@@ -167,7 +167,7 @@ def query_utilization_baseline():
             100-ROUND(100*(SUM(delays)+SUM(cancellations))/SUM(a.flightCycles), 2) AS TDR,
             100*ROUND(SUM(delayedMinutes)/SUM(delays),2) AS ADD
         FROM atomic_data a
-        GROUP BY a.manufacturer, a.year9g
+        GROUP BY a.manufacturer, a.year
         ORDER BY a.manufacturer, a.year;
         """)
     result = cur.fetchall()
