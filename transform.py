@@ -139,17 +139,9 @@ def transform_logbook(FH, postflight, personnel, airdimset):
 
     reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'R': 'sum', 'FH': 'sum', 'TO': 'sum'})
 
-    reports_date['RRh'] = 1000*reports_date['R']/reports_date['FH']
-    reports_date['RRc'] = 100*reports_date['R']/reports_date['TO']
-    reports_date['PRRh'] = 1000*reports_date['PR']/reports_date['FH']
-    reports_date['PRRc'] = 100*reports_date['PR']/reports_date['TO']
-    reports_date['MRRh'] = 1000*reports_date['MR']/reports_date['FH']
-    reports_date['MRRc'] = 100*reports_date['MR']/reports_date['TO']
 
     reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
-    reports_airport['MRRh'] = 1000*reports_airport['MR']/reports_airport['FH']
-    reports_airport['MRRc'] = 100*reports_airport['MR']/reports_airport['TO']
-    return reports_date[['aircraft', 'date', 'RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']], reports_airport[['aircraft', 'airport', 'MRRh', 'MRRc']]
+    return reports_date[['aircraft', 'date', 'MR', 'PR', 'FH', 'TO']], reports_airport[['aircraft', 'airport', 'MR', 'FH', 'TO']]
 
 """
 airdim = create_dim_aircraft()
