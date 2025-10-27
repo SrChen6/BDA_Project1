@@ -188,19 +188,45 @@ class DW:
 
     def query_utilization(self):
         result = self.conn_duckdb.execute("""
-            SELECT ...
+            SELECT
+            a.manufacturer,
+            d.year,
+            SUM(f.FH) AS FH_count,
+            SUM(f.TO) AS TO_count,
+            FROM fact_flight_daily f, dim_date_day d, dim_plane a
+            where f.date = d.date and f.aircraft = a.aircraft
+            GROUP BY a.manufacturer, d.year
+            ORDER BY a.manufacturer, d.year
             """).fetchall()
         return result
 
     def query_reporting(self):
         result = self.conn_duckdb.execute("""
-            SELECT ...
+            SELECT
+            a.manufacturer,
+            d.year,
+            SUM(f.RRh) AS RRh,
+            SUM(f.RRc) AS RRc
+            FROM fact_reports_monthly f, dim_date_month d, dim_plane a
+            where f.date = d.date and f.aircraft = a.aircraft
+            GROUP BY a.manufacturer, d.year
+            ORDER BY a.manufacturer, d.year
             """).fetchall()
         return result
 
     def query_reporting_per_role(self):
         result = self.conn_duckdb.execute("""
-            SELECT ...
+            SELECT
+            a.manufacturer,
+            d.year,
+            SUM(f.PRRh) AS PIREP_RRh,
+            SUM(f.MRRh) AS MAREP_RRh,
+            SUM(f.PRRc) AS PIREP_RRc,
+            SUM(f.MRRc) AS MAREP_RRc
+            FROM fact_reports_monthly f, dim_date_month d, dim_plane a
+            where f.date = d.date and f.aircraft = a.aircraft
+            GROUP BY a.manufacturer, d.year
+            ORDER BY a.manufacturer, d.year
             """).fetchall()
         return result
 
