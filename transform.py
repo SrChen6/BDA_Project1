@@ -16,7 +16,7 @@ def build_dateCode(date) -> str:
 
 
 def build_monthCode(date) -> str:
-    return f"{date.year}{str(date.month).zfill(2)}"
+    return f"{date.year}-{str(date.month).zfill(2)}"
 
 
 ## Aircraft
@@ -114,55 +114,36 @@ def transform_flights(flightsource, manteinancesource):
     return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADIS', 'ADOS', 'ADOSS', 'ADOSU', 'DYR', 'CNR', 'TDR', 'ADD', 'TO']]
 
 def transform_logbook(FH, postflight, personnel, airdimset):
-    # FH = FH.copy()
+    FH = FH.copy()
     FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
-    FH['date'] = FH['date'].apply(build_dateCode) #applies the change row by row
-    # FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
+    FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
+    FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     reports_lst = [] # aircraft, date, pirep count, marep count
     for report in tqdm(postflight):
         # business rule 3: Check if aircraft registration in airdim set
         if report['aircraftregistration'] in airdimset:
             if report['reporteurclass'] == 'MAREP':
-                reports_lst.append([report['aircraftregistration'], build_dateCode(report['reportingdate']), 1, 0, report['reporteurid']])
+                reports_lst.append([report['aircraftregistration'], build_monthCode(report['reportingdate']), 1, 0, report['reporteurid']])
             else:
-                reports_lst.append([report['aircraftregistration'], build_dateCode(report['reportingdate']), 0, 1, report['reporteurid']])
+                reports_lst.append([report['aircraftregistration'], build_monthCode(report['reportingdate']), 0, 1, report['reporteurid']])
         else:
+            #print(f"AAA {report['aircraftregistration']}")
             logging.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension. Ignoring row {report} ")
 
     reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
-    reports2 = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
-    print("REPORTS 2")
-    print(reports2)
-    print("FH") 
-    print(FH)
-    print(type(reports2['date']))
-    print(type(FH['date']))
-    
-    reports_date = pd.merge(reports2, FH)
-    reports_date2 = pd.merge(reports, FH)
+    reports_date = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
     print(reports_date)
 
-    reports_airport = pd.merge(reports_date2, personnel, on="reporteurid")
+    reports_airport = pd.merge(reports, personnel, on="reporteurid")
+    reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
+    reports_airport['FH'] = 0 # TODO: compute the real FH & TO
+    reports_airport['TO'] = 0
 
-
-
-    reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
-
-    reports_date["date"] = pd.to_datetime(reports_date["date"], format="%Y-%m-%d")
-    reports_date['date'] = reports_date['date'].apply(build_monthCode) #applies the change row by row
-    reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
+    reports_date = pd.merge(reports_date, FH)
+    print(reports_date)
 
     return reports_date[['aircraft', 'date', 'MR', 'PR', 'FH', 'TO']], reports_airport[['aircraft', 'airport', 'MR', 'FH', 'TO']]
-"""
-airdim = create_dim_aircraft()
-# TODO:rule 3: Check if aircraft registration in airdim set
-airdimset = set(airdim['aircraft'])
-timedim = create_dim_time()
-FH, DYR = extract_flight()
-ADOS = extractADOS()
-RR = extract_logbook(FH)
-"""
 
 
 def run_all_transformations(raw_data: dict):
