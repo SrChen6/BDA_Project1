@@ -75,18 +75,18 @@ def transform_flights(flightsource, manteinancesource):
             delay_time = flight['actualdeparture']-flight['scheduleddeparture']
             if (delay_time > pd.Timedelta(minutes=15)) and (delay_time < pd.Timedelta(hours=6)):
                 # The flight has been delayed
-                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0,delay_time/pd.Timedelta(minutes=1),1])
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),1,0,delay_time/pd.Timedelta(minutes=1),FH, 1])
             else:
-                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0,0,1])
+                delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0,0,FH, 1])
         else:
             # The flight has been cancelled
-            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,1])
+            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,FH, 1])
 
     flightdaily = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
     flightdaily = flightdaily.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
-    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DY', 'CN', 'ADD', 'TO'])
-    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DY': 'sum', 'CN': 'sum', 'ADD': 'sum', 'TO': 'sum'})
+    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DY', 'CN', 'ADD', 'FH', 'TO'])
+    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DY': 'sum', 'CN': 'sum', 'ADD': 'sum','FH': 'sum', 'TO': 'sum'})
 
     # ADOS, ADOSS, ADOSU, ADIS
     ADO_lst = []
@@ -106,7 +106,7 @@ def transform_flights(flightsource, manteinancesource):
 
     flightmonthly = pd.merge(ADO, delayinfo, on= ["aircraft", "date"])
 
-    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADOSS', 'ADOSU', 'DY', 'CN', 'ADD', 'TO']]
+    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADOSS', 'ADOSU', 'DY', 'CN', 'ADD', 'FH', 'TO']]
 
 def transform_logbook(FH, postflight, personnel, airdimset):
     FH = FH.copy()
