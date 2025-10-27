@@ -80,13 +80,13 @@ def transform_flights(flightsource, manteinancesource):
                 delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['actualdeparture']),0,0,0,FH, 1])
         else:
             # The flight has been cancelled
-            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,FH, 1])
+            delay_lst.append([flight['aircraftregistration'],build_monthCode(flight['scheduleddeparture']),0,1,0,0, 0])
 
     flightdaily = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
     flightdaily = flightdaily.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
-    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DY', 'CN', 'ADD', 'FH', 'TO'])
-    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DY': 'sum', 'CN': 'sum', 'ADD': 'sum','FH': 'sum', 'TO': 'sum'})
+    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DY', 'CN', 'Dmin', 'FH', 'TO'])
+    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DY': 'sum', 'CN': 'sum', 'Dmin': 'sum','FH': 'sum', 'TO': 'sum'})
 
     # ADOS, ADOSS, ADOSU, ADIS
     ADO_lst = []
@@ -106,7 +106,7 @@ def transform_flights(flightsource, manteinancesource):
 
     flightmonthly = pd.merge(ADO, delayinfo, on= ["aircraft", "date"])
 
-    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADOSS', 'ADOSU', 'DY', 'CN', 'ADD', 'FH', 'TO']]
+    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADOSS', 'ADOSU', 'DY', 'CN', 'Dmin', 'FH', 'TO']]
 
 def transform_logbook(FH, postflight, personnel, airdimset):
     FH = FH.copy()

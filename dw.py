@@ -73,7 +73,7 @@ class DW:
             ADOSU DOUBLE,
             DY DOUBLE,
             CN DOUBLE,
-            ADD DOUBLE,
+            Dmin DOUBLE,
             FH DOUBLE,
             "TO" INTEGER,
             PRIMARY KEY (aircraft, date),
@@ -148,7 +148,7 @@ class DW:
             keyrefs=['aircraft', 'date'],
             measures=[
                 'ADIS', 'ADOS', 'ADOSS', 'ADOSU',
-                'DYR', 'CNR', 'TDR', 'ADD','FH', 'TO'
+                'DYR', 'CNR', 'TDR', 'Dmin','FH', 'TO'
             ]
         )
 
@@ -191,7 +191,7 @@ class DW:
                 f.aircraft,
                 SUM(f.FH) AS total_FH_aircraft,
                 SUM(f.TO) AS total_TO_aircraft
-            FROM fact_flight_daily f, dim_date_day d
+            FROM fact_flight_monthly f, dim_date_month d
             WHERE f.date = d.date
             GROUP BY d.year, f.aircraft
         )
@@ -209,49 +209,26 @@ class DW:
 
     def query_utilization(self):
         result = self.conn_duckdb.execute("""
-        WITH yearly_per_aircraft1 AS (
-            SELECT
-                d.year,
-                f.aircraft,
-                SUM(f.FH) AS total_FH_aircraft,
-                SUM(f.TO) AS total_TO_aircraft
-            FROM fact_flight_daily f, dim_date_day d
-            WHERE f.date = d.date
-            GROUP BY d.year, f.aircraft
-        ),
-        yearly_per_aircraft2 AS (
-            SELECT
-                d.year,
-                f.aircraft,
-                SUM(f.ADOSS) AS ADOSS,
-                SUM(f.ADOSU) AS ADOSU,
-                SUM(f.ADOS) AS ADOS,
-                SUM(f.ADIS) AS ADIS,
-                SUM(f.DYR) AS DYR,
-                SUM(f.CNR) AS CNR,
-                SUM(f.TDR) AS TDR,
-                SUM(f.ADD) AS ADD
-            FROM fact_flight_monthly f, dim_date_month d
-            WHERE f.date = d.date
-            GROUP BY d.year, f.aircraft
-        )
         SELECT
             a.manufacturer,
-            y1.year,
-            AVG(y1.total_FH_aircraft) AS avg_FH_per_aircraft,
-            AVG(y1.total_TO_aircraft) AS avg_TO_per_aircraft,
-            AVG(y2.ADOSS) AS avg_ADOSS_per_aircraft,
-            AVG(y2.ADOSU) AS avg_ADOSU_per_aircraft,
-            AVG(y2.ADOS) AS avg_ADOS_per_aircraft,
-            365-AVG(y2.ADOS) AS avg_ADIS_per_aircraft,
-            AVG(y2.DYR) AS avg_DYR_per_aircraft,
-            AVG(y2.CNR) AS avg_CNR_per_aircraft,
-            AVG(y2.TDR) AS avg_TDR_per_aircraft,
-            AVG(y2.ADD) AS avg_ADD_per_aircraft
-        FROM yearly_per_aircraft1 y1, yearly_per_aircraft2 y2, dim_plane a
-        WHERE y1.aircraft = a.aircraft AND y2.aircraft = a.aircraft and y1.year = y2.year
-        GROUP BY a.manufacturer, y1.year
-        ORDER BY a.manufacturer, y1.year
+            d.year,
+            sum(f.FH) / COUNT(DISTINCT f.aircraft) AS FH,
+            sum(f.TO) / COUNT(DISTINCT f.aircraft) AS TO,
+            sum(f.ADOSS) / COUNT(DISTINCT f.aircraft) AS ADOSS,
+            sum(f.ADOSU) / COUNT(DISTINCT f.aircraft) AS ADOSU,
+            (sum(f.ADOSU)+sum(f.ADOSS)) / COUNT(DISTINCT f.aircraft) AS ADOS,
+            365-(sum(f.ADOSU)+sum(f.ADOSS)) / COUNT(DISTINCT f.aircraft) AS ADIS,
+            (sum(f.FH) / COUNT(DISTINCT f.aircraft))/(365-(sum(f.ADOSU)+sum(f.ADOSS)) / COUNT(DISTINCT f.aircraft))/24 AS DU,  
+            (sum(f.TO) / COUNT(DISTINCT f.aircraft))/(365-(sum(f.ADOSU)+sum(f.ADOSS)) / COUNT(DISTINCT f.aircraft)) AS DC,  
+            100*sum(f.DY)/sum(f.TO) AS DYR,
+            100*sum(f.CN)/sum(f.TO) AS CNR,
+            100-((sum(f.DY)+sum(f.CN))/sum(f.TO))*100 AS TDR,
+            100*sum(f.Dmin)/sum(f.DY) AS ADD
+                                                               
+        FROM fact_flight_monthly f, dim_plane a, dim_date_month d
+        WHERE f.date = d.date and f.aircraft = a.aircraft
+        GROUP BY a.manufacturer, d.year
+        ORDER BY a.manufacturer, d.year
         """).fetchall()
         return result
 
@@ -261,12 +238,12 @@ class DW:
             a.manufacturer,
             d.year,
             (SUM(f.PR)+sum(f.MR)),
-            sum(f.FH),
-            sum(f.TO),
-            1000*(SUM(f.PR)+sum(f.MR))/sum(f.FH) AS RRh,
-            100*(SUM(f.PR)+sum(f.MR))/sum(f.TO) AS RRc,
-            FROM fact_reports_monthly f, dim_date_month d, dim_plane a
-            where f.date = d.date and f.aircraft = a.aircraft
+            sum(m.FH),
+            sum(m.TO),
+            1000*(SUM(f.PR)+sum(f.MR))/sum(m.FH) AS RRh,
+            100*(SUM(f.PR)+sum(f.MR))/sum(m.TO) AS RRc,
+            FROM fact_reports_monthly f, fact_flight_monthly m, dim_date_month d, dim_plane a
+            where f.date = d.date and f.aircraft = a.aircraft and f.date = m.date and f.aircraft = m.aircraft
             GROUP BY a.manufacturer, d.year
             ORDER BY a.manufacturer, d.year
             """).fetchall()
