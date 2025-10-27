@@ -214,8 +214,8 @@ class DW:
             SELECT
             a.manufacturer,
             d.year,
-            SUM(f.RRh) AS RRh,
-            SUM(f.RRc) AS RRc
+            1000*(SUM(f.PR)+sum(f.MR))/sum(f.FH) AS RRh,
+            100*(SUM(f.PR)+sum(f.MR))/sum(f.TO) AS RRc,
             FROM fact_reports_monthly f, dim_date_month d, dim_plane a
             where f.date = d.date and f.aircraft = a.aircraft
             GROUP BY a.manufacturer, d.year
