@@ -152,6 +152,7 @@ def transform_logbook(FH, postflight, personnel, airdimset):
     reports_date["date"] = pd.to_datetime(reports_date["date"], format="%Y-%m-%d")
     reports_date['date'] = reports_date['date'].apply(build_monthCode) #applies the change row by row
     reports_date = reports_date.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum', 'FH': 'sum', 'TO': 'sum'})
+
     return reports_date[['aircraft', 'date', 'MR', 'PR', 'FH', 'TO']], reports_airport[['aircraft', 'airport', 'MR', 'FH', 'TO']]
 """
 airdim = create_dim_aircraft()

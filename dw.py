@@ -185,7 +185,7 @@ class DW:
         ORDER BY a.manufacturer, a.model, a.aircraft, d.year, d.month, d.day""").fetchall()
         return result
 
-    def query_utilization(self):
+    def query_utilization_old(self):
         result = self.conn_duckdb.execute("""
         WITH yearly_per_aircraft AS (
             SELECT
@@ -209,11 +209,62 @@ class DW:
         """).fetchall()
         return result
 
+    def query_utilization(self):
+        result = self.conn_duckdb.execute("""
+        WITH yearly_per_aircraft1 AS (
+            SELECT
+                d.year,
+                f.aircraft,
+                SUM(f.FH) AS total_FH_aircraft,
+                SUM(f.TO) AS total_TO_aircraft
+            FROM fact_flight_daily f, dim_date_day d
+            WHERE f.date = d.date
+            GROUP BY d.year, f.aircraft
+        ),
+        yearly_per_aircraft2 AS (
+            SELECT
+                d.year,
+                f.aircraft,
+                SUM(f.ADOSS) AS ADOSS,
+                SUM(f.ADOSU) AS ADOSU,
+                SUM(f.ADOS) AS ADOS,
+                SUM(f.ADIS) AS ADIS,
+                SUM(f.DYR) AS DYR,
+                SUM(f.CNR) AS CNR,
+                SUM(f.TDR) AS TDR,
+                SUM(f.ADD) AS ADD
+            FROM fact_flight_monthly f, dim_date_month d
+            WHERE f.date = d.date
+            GROUP BY d.year, f.aircraft
+        )
+        SELECT
+            a.manufacturer,
+            y1.year,
+            AVG(y1.total_FH_aircraft) AS avg_FH_per_aircraft,
+            AVG(y1.total_TO_aircraft) AS avg_TO_per_aircraft,
+            AVG(y2.ADOSS) AS avg_ADOSS_per_aircraft,
+            AVG(y2.ADOSU) AS avg_ADOSU_per_aircraft,
+            AVG(y2.ADOS) AS avg_ADOS_per_aircraft,
+            365-AVG(y2.ADOS) AS avg_ADIS_per_aircraft,
+            AVG(y2.DYR) AS avg_DYR_per_aircraft,
+            AVG(y2.CNR) AS avg_CNR_per_aircraft,
+            AVG(y2.TDR) AS avg_TDR_per_aircraft,
+            AVG(y2.ADD) AS avg_ADD_per_aircraft
+        FROM yearly_per_aircraft1 y1, yearly_per_aircraft2 y2, dim_plane a
+        WHERE y1.aircraft = a.aircraft AND y2.aircraft = a.aircraft and y1.year = y2.year
+        GROUP BY a.manufacturer, y1.year
+        ORDER BY a.manufacturer, y1.year
+        """).fetchall()
+        return result
+
     def query_reporting(self):
         result = self.conn_duckdb.execute("""
             SELECT
             a.manufacturer,
             d.year,
+            (SUM(f.PR)+sum(f.MR)),
+            sum(f.FH),
+            sum(f.TO),
             1000*(SUM(f.PR)+sum(f.MR))/sum(f.FH) AS RRh,
             100*(SUM(f.PR)+sum(f.MR))/sum(f.TO) AS RRc,
             FROM fact_reports_monthly f, dim_date_month d, dim_plane a

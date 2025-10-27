@@ -212,6 +212,9 @@ def query_reporting_baseline():
                 GROUP BY manufacturer, YEAR
                 )
         SELECT f1.manufacturer, f1.year,
+            f1.counter,
+            f2.flightHours,
+            f2.flightCycles,
             1000*ROUND(f1.counter/f2.flightHours, 3) AS RRh,
             100*ROUND(f1.counter/f2.flightCycles, 2) AS RRc
         FROM atomic_data_reporting f1
