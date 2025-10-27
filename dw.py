@@ -188,16 +188,26 @@ class DW:
 
     def query_utilization(self):
         result = self.conn_duckdb.execute("""
+        WITH yearly_per_aircraft AS (
             SELECT
+                d.year,
+                f.aircraft,
+                SUM(f.FH) AS total_FH_aircraft,
+                SUM(f.TO) AS total_TO_aircraft
+            FROM fact_flight_daily f, dim_date_day d
+            WHERE f.date = d.date
+            GROUP BY d.year, f.aircraft
+        )
+        SELECT
             a.manufacturer,
-            d.year,
-            SUM(f.FH) AS FH_count,
-            SUM(f.TO) AS TO_count,
-            FROM fact_flight_daily f, dim_date_day d, dim_plane a
-            where f.date = d.date and f.aircraft = a.aircraft
-            GROUP BY a.manufacturer, d.year
-            ORDER BY a.manufacturer, d.year
-            """).fetchall()
+            y.year,
+            AVG(total_FH_aircraft) AS avg_FH_per_aircraft,
+            AVG(total_TO_aircraft) AS avg_TO_per_aircraft
+        FROM yearly_per_aircraft y, dim_plane a
+        WHERE y.aircraft = a.aircraft
+        GROUP BY manufacturer, year
+        ORDER BY manufacturer, year;
+        """).fetchall()
         return result
 
     def query_reporting(self):
