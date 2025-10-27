@@ -53,7 +53,7 @@ def extract_from_postgres(conn):
                             names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
 
     postflightreportssource = SQLSource(connection=conn,
-                            query='select * from "AMOS".technicallogbookorders t;',
+                            query='select * from "AMOS".postflightreports p;',
                             names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
     return {"flights": flightsource, "maintenance": maintenancesource, "logbook": logbooksource, "postflight": postflightreportssource}
 
@@ -167,7 +167,7 @@ def query_utilization_baseline():
             100-ROUND(100*(SUM(delays)+SUM(cancellations))/SUM(a.flightCycles), 2) AS TDR,
             100*ROUND(SUM(delayedMinutes)/SUM(delays),2) AS ADD
         FROM atomic_data a
-        GROUP BY a.manufacturer, a.year
+        GROUP BY a.manufacturer, a.year9g
         ORDER BY a.manufacturer, a.year;
         """)
     result = cur.fetchall()
