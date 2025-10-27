@@ -86,12 +86,10 @@ class DW:
         CREATE TABLE fact_reports_monthly (
             aircraft TEXT,
             date TEXT,
-            RRh DOUBLE,
-            RRc DOUBLE,
-            PRRh DOUBLE,
-            PRRc DOUBLE,
-            MRRh DOUBLE,
-            MRRc DOUBLE,
+            MR DOUBLE,
+            PR DOUBLE,
+            FH DOUBLE,
+            "TO" INTEGER,
             PRIMARY KEY (aircraft, date),
             FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
             FOREIGN KEY (date) REFERENCES dim_date_month(date)
@@ -100,8 +98,9 @@ class DW:
         CREATE TABLE fact_reports_airport (
             aircraft TEXT,
             airport TEXT,
-            MRRh DOUBLE,
-            MRRc DOUBLE,
+            MR DOUBLE,
+            FH DOUBLE,
+            "TO" INTEGER,
             PRIMARY KEY (aircraft, airport),
             FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
             FOREIGN KEY (airport) REFERENCES dim_airport(airport)
@@ -158,13 +157,13 @@ class DW:
         self.fact_reports_monthly = FactTable(
             name='fact_reports_monthly',
             keyrefs=['aircraft', 'date'],
-            measures=['RRh', 'RRc', 'PRRh', 'PRRc', 'MRRh', 'MRRc']
+            measures=['MR', 'PR', 'FH', 'TO']
         )
 
         self.fact_reports_airport = FactTable(
             name='fact_reports_airport',
             keyrefs=['aircraft', 'airport'],
-            measures=['MRRh', 'MRRc']
+            measures=['MR', 'FH', 'TO']
         )
 
 
