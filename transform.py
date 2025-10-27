@@ -113,20 +113,20 @@ def transform_flights(flightsource, manteinancesource):
 
     return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADIS', 'ADOS', 'ADOSS', 'ADOSU', 'DYR', 'CNR', 'TDR', 'ADD', 'TO']]
 
-def transform_logbook(FH, logbooksource, personnel, airdimset):
+def transform_logbook(FH, postflight, personnel, airdimset):
     FH = FH.copy()
     FH["date"] = pd.to_datetime(FH["date"], format="%Y-%m-%d")
     FH['date'] = FH['date'].apply(build_monthCode) #applies the change row by row
     FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     reports_lst = [] # aircraft, date, pirep count, marep count
-    for report in tqdm(logbooksource):
+    for report in tqdm(postflight):
         # business rule 3: Check if aircraft registration in airdim set
         if report['aircraftregistration'] in airdimset:
             if report['reporteurclass'] == 'MAREP':
-                reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 1, 0, report['reporteurid']])
+                reports_lst.append([report['aircraftregistration'], build_monthCode(report['reportingdate']), 1, 0, report['reporteurid']])
             else:
-                reports_lst.append([report['aircraftregistration'], build_monthCode(report['executiondate']), 0, 1, report['reporteurid']])
+                reports_lst.append([report['aircraftregistration'], build_monthCode(report['reportingdate']), 0, 1, report['reporteurid']])
         else:
             print(f"AAA {report['aircraftregistration']}")
             logging.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension. Ignoring row {report} ")
@@ -171,7 +171,7 @@ def run_all_transformations(raw_data: dict):
     airdimset = set(airdim['aircraft'])
 
     flight_daily, flight_monthly = transform_flights(raw_data['flights'], raw_data['maintenance'])
-    reports_monthly, reports_airport = transform_logbook(flight_daily, raw_data['logbook'],airport, airdimset)
+    reports_monthly, reports_airport = transform_logbook(flight_daily, raw_data['postflight'],airport, airdimset)
     """print("ALL TABLES\n++++++++++++++++++++++++++++++++++++++")
     print(airdim)
     print(airport)
