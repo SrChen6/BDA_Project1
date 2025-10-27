@@ -74,6 +74,7 @@ class DW:
             DY DOUBLE,
             CN DOUBLE,
             ADD DOUBLE,
+            FH DOUBLE,
             "TO" INTEGER,
             PRIMARY KEY (aircraft, date),
             FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
@@ -147,7 +148,7 @@ class DW:
             keyrefs=['aircraft', 'date'],
             measures=[
                 'ADIS', 'ADOS', 'ADOSS', 'ADOSU',
-                'DYR', 'CNR', 'TDR', 'ADD', 'TO'
+                'DYR', 'CNR', 'TDR', 'ADD','FH', 'TO'
             ]
         )
 
