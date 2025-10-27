@@ -85,13 +85,10 @@ def transform_flights(flightsource, manteinancesource):
     flightdaily = pd.DataFrame(flightinfo_lst, columns=['aircraft', 'date', 'FH', 'TO'])
     flightdaily = flightdaily.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
-    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DYR', 'CNR', 'ADD', 'TO'])
-    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DYR': 'sum', 'CNR': 'sum', 'ADD': 'sum', 'TO': 'sum'})
-    delayinfo['TDR'] = 100-((delayinfo['CNR']+delayinfo['DYR'])/delayinfo['TO'])*100
-    delayinfo['DYR'] = delayinfo['DYR']/delayinfo['TO']*100
-    delayinfo['CNR'] = delayinfo['CNR']/delayinfo['TO']*100
+    delayinfo = pd.DataFrame(delay_lst, columns = ['aircraft', 'date', 'DY', 'CN', 'ADD', 'TO'])
+    delayinfo = delayinfo.groupby(['aircraft', 'date'], as_index=False).agg({'DY': 'sum', 'CN': 'sum', 'ADD': 'sum', 'TO': 'sum'})
 
-    # ADOS, ADOSS, ADOSU
+    # ADOS, ADOSS, ADOSU, ADIS
     ADO_lst = []
     for maint in tqdm(manteinancesource):
         #Converting days & hours to days with decimals
@@ -99,19 +96,17 @@ def transform_flights(flightsource, manteinancesource):
         if maint['programmed'] == 1:
             #The date corresponds to the departure
             #If programmed, then it counts as ADOSS
-            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']),
-                            maint_H, maint_H, 0])
+            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']), maint_H, 0])
         else:
             #If not programmed, then it counts as ADOSU
-            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']),
-                            maint_H, 0, maint_H])
-    ADO = pd.DataFrame(ADO_lst, columns=['aircraft', 'date', 'ADOS', 'ADOSS', 'ADOSU'])
-    ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOS': 'sum', 'ADOSS': 'sum', 'ADOSU': 'sum'})
-    ADO['ADIS'] = 365-ADO['ADOS']
+            ADO_lst.append([maint['aircraftregistration'], build_monthCode(maint['scheduleddeparture']), 0, maint_H])
+
+    ADO = pd.DataFrame(ADO_lst, columns=['aircraft', 'date', 'ADOSS', 'ADOSU'])
+    ADO = ADO.groupby(['aircraft', 'date'], as_index=False).agg({'ADOSS': 'sum', 'ADOSU': 'sum'})
 
     flightmonthly = pd.merge(ADO, delayinfo, on= ["aircraft", "date"])
 
-    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADIS', 'ADOS', 'ADOSS', 'ADOSU', 'DYR', 'CNR', 'TDR', 'ADD', 'TO']]
+    return flightdaily[['aircraft', 'date', 'FH', 'TO']], flightmonthly[['aircraft', 'date', 'ADOSS', 'ADOSU', 'DY', 'CN', 'ADD', 'TO']]
 
 def transform_logbook(FH, postflight, personnel, airdimset):
     FH = FH.copy()
@@ -133,7 +128,6 @@ def transform_logbook(FH, postflight, personnel, airdimset):
 
     reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
     reports_date = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
-    print(reports_date)
 
     reports_airport = pd.merge(reports, personnel, on="reporteurid")
     reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
@@ -141,7 +135,6 @@ def transform_logbook(FH, postflight, personnel, airdimset):
     reports_airport['TO'] = 0
 
     reports_date = pd.merge(reports_date, FH)
-    print(reports_date)
 
     return reports_date[['aircraft', 'date', 'MR', 'PR', 'FH', 'TO']], reports_airport[['aircraft', 'airport', 'MR', 'FH', 'TO']]
 
