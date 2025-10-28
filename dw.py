@@ -254,12 +254,12 @@ class DW:
             SELECT
             a.manufacturer,
             d.year,
-            SUM(f.PRRh) AS PIREP_RRh,
-            SUM(f.MRRh) AS MAREP_RRh,
-            SUM(f.PRRc) AS PIREP_RRc,
-            SUM(f.MRRc) AS MAREP_RRc
-            FROM fact_reports_monthly f, dim_date_month d, dim_plane a
-            where f.date = d.date and f.aircraft = a.aircraft
+            1000*SUM(f.MR)/sum(m.FH) AS MRRh,
+            100*SUM(f.MR)/sum(m.TO) AS MRRc,
+            1000*SUM(f.PR)/sum(m.FH) AS PRRh,
+            100*SUM(f.PR)/sum(m.TO) AS PRRc,
+            FROM fact_reports_monthly f, fact_flight_monthly m, dim_date_month d, dim_plane a
+            where f.date = d.date and f.aircraft = a.aircraft and f.date = m.date and f.aircraft = m.aircraft
             GROUP BY a.manufacturer, d.year
             ORDER BY a.manufacturer, d.year
             """).fetchall()
