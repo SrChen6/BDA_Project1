@@ -1,6 +1,6 @@
 import duckdb
 from tqdm import tqdm
-
+from logger_setup import log_screen, log_file
 
 def load_dataframe(con, table_name, df):
     if df is None or df.empty:
@@ -25,7 +25,7 @@ def load_dataframe(con, table_name, df):
     except Exception:
         pass
 
-    print(f"Loaded {len(df)} rows into {table_name}")
+    log_screen.info(f"Loaded {len(df)} rows into {table_name}")
 
 
 def run_all_loads(dw, data_dict):
@@ -41,19 +41,11 @@ def run_all_loads(dw, data_dict):
         "monthly": "dim_date_month"
     }
     for key, df in tqdm(data_dict.items(),desc="Loading tables"):
+        log_screen.info(f"Loading table {key}")
         if key in mapping:
-            print(key)
             load_dataframe(con, mapping[key], df)
 
             result = con.sql(f"""SELECT *
             FROM {mapping[key]}
             """)
-            print(key)
-            print(result)
-            if key == "aircraft":
-                result = con.sql(f"""SELECT *
-                FROM {mapping[key]} a
-                WHERE a.aircraft == 'XY-ACK'
-                """)
-                print(key)
-                print(result)
+

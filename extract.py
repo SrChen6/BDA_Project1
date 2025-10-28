@@ -4,13 +4,6 @@ import pandas as pd
 # https://pygrametl.org
 from pygrametl.datasources import CSVSource, SQLSource
 from tqdm import tqdm
-import logging
-
-logging.basicConfig(
-    filename='cleaning.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s'
-)
 
 def connect_postgres(config_path: str = 'db_conf.txt'):
     # Connect to the PostgreSQL source

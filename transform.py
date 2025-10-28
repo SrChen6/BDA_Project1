@@ -1,15 +1,6 @@
 from tqdm import tqdm
-import logging
 import pandas as pd
-
-
-# Configure logging
-logging.basicConfig(
-    filename='cleaning.log',           # Log file name
-    level=logging.INFO,           # Logging level
-    format='%(message)s'  # Log message format
-)
-
+from logger_setup import log_screen, log_file
 
 def build_dateCode(date) -> str:
     return f"{date.year}-{date.month}-{date.day}"
@@ -56,17 +47,18 @@ def transform_flights(flightsource, manteinancesource):
     prev_flight = None
     flightinfo_lst = []
     delay_lst = [] 
+    flightsource = list(flightsource) # To get length for progress bar, low cost
     for flight in tqdm(flightsource):
         if flight["cancelled"] == 0:
             if prev_flight is not None:
                 if (prev_flight['aircraftregistration'] == flight['aircraftregistration']) and (prev_flight['actualarrival'] > flight['actualdeparture']):
                     # Business rule 2: if two flights are overlaping, ignore the first one
-                    logging.info(f"BR-21: Ignored overlapping flight {prev_flight['flightid']} ({prev_flight['aircraftregistration']}) overlapping with {flight['flightid']}")
+                    log_file.info(f"BR-21: Ignored overlapping flight {prev_flight['flightid']} ({prev_flight['aircraftregistration']}) overlapping with {flight['flightid']}")
                     flightinfo_lst.pop()
             prev_flight = flight
             # Business rule 1: arrival can not be posterior to departure
             if flight["actualarrival"] <= flight["actualdeparture"]:
-                logging.info(f"BR-23: Swapped actualArrival and actualDeparture for flight {flight['flightid']} ({flight['aircraftregistration']})")
+                log_file.info(f"BR-23: Swapped actualArrival and actualDeparture for flight {flight['flightid']} ({flight['aircraftregistration']})")
                 # flight["actualarrival"], flight["actualdeparture"] = flight["actualdeparture"], flight["actualarrival"] si queremos el swap
 
             FH = abs(flight["actualarrival"] - flight["actualdeparture"]).total_seconds()/3600
@@ -90,6 +82,7 @@ def transform_flights(flightsource, manteinancesource):
 
     # ADOS, ADOSS, ADOSU, ADIS
     ADO_lst = []
+    manteinancesource = list(manteinancesource) # To get length for progress bar, low cost
     for maint in tqdm(manteinancesource):
         #Converting days & hours to days with decimals
         maint_H = (maint['scheduledarrival']-maint['scheduleddeparture'])/pd.Timedelta(days=1)
@@ -115,6 +108,7 @@ def transform_logbook(FH, postflight, personnel, airdimset):
     FH = FH.groupby(['aircraft', 'date'], as_index=False).agg({'FH': 'sum', 'TO': 'sum'})
 
     reports_lst = [] # aircraft, date, pirep count, marep count
+    postflight = list(postflight) # To get length for progress bar, low cost
     for report in tqdm(postflight):
         # business rule 3: Check if aircraft registration in airdim set
         if report['aircraftregistration'] in airdimset:
@@ -123,23 +117,23 @@ def transform_logbook(FH, postflight, personnel, airdimset):
             else:
                 reports_lst.append([report['aircraftregistration'], build_monthCode(report['reportingdate']), 0, 1, report['reporteurid']])
         else:
-            #print(f"AAA {report['aircraftregistration']}")
-            logging.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension. Ignoring row {report} ")
+            log_file.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension. Ignoring row {report} ")
 
     reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
     reports_date = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
 
     reports_airport = pd.merge(reports, personnel, on="reporteurid")
     reports_airport = reports_airport.groupby(['aircraft', 'airport'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
-    reports_airport['FH'] = 0 # TODO: compute the real FH & TO
-    reports_airport['TO'] = 0
+    # reports_airport['FH'] = 0 # TODO: compute the real FH & TO
+    # reports_airport['TO'] = 0
 
     reports_date = pd.merge(reports_date, FH)
 
-    return reports_date[['aircraft', 'date', 'MR', 'PR', 'FH', 'TO']], reports_airport[['aircraft', 'airport', 'MR', 'FH', 'TO']]
+    return reports_date[['aircraft', 'date', 'MR', 'PR', 'FH', 'TO']], reports_airport[['aircraft', 'airport', 'MR']]
 
 
 def run_all_transformations(raw_data: dict):
+    log_screen.info("Creating dimension tables")
     airdim = create_dim_aircraft(raw_data["manufacturerinfo"])
     airport = create_dim_airport(raw_data["personnel"])
     dailydim = create_dim_daily()
@@ -147,17 +141,11 @@ def run_all_transformations(raw_data: dict):
 
     airdimset = set(airdim['aircraft'])
 
+    log_screen.info("Creating fact tables")
+    log_screen.info("   - Creating flight_daily and flight_monthly tables")
     flight_daily, flight_monthly = transform_flights(raw_data['flights'], raw_data['maintenance'])
+    log_screen.info("   - Creating reports_monthly and reports_airport tables")
     reports_monthly, reports_airport = transform_logbook(flight_daily, raw_data['postflight'],airport, airdimset)
-    """print("ALL TABLES\n++++++++++++++++++++++++++++++++++++++")
-    print(airdim)
-    print(airport)
-    print(dailydim)
-    print(monthlydim)
-    print(flight_daily)
-    print(flight_monthly)
-    print(reports_monthly)
-    print(reports_airport)"""
     return {"aircraft": airdim,
             "airport": pd.DataFrame({'airport': airport["airport"].unique()}),
             "daily": dailydim,

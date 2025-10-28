@@ -3,7 +3,7 @@ import sys
 import duckdb  # https://duckdb.org
 import pygrametl  # https://pygrametl.org
 from pygrametl.tables import CachedDimension, SnowflakedDimension, FactTable
-
+from logger_setup import log_screen, log_file
 
 duckdb_filename = 'dw.duckdb'
 
@@ -14,17 +14,17 @@ class DW:
             os.remove(duckdb_filename)
         try:
             self.conn_duckdb = duckdb.connect(duckdb_filename)
-            print("Connection to the DW created successfully")
+            log_screen.info("Connection to the DW created successfully")
         except duckdb.Error as e:
-            print(f"Unable to connect to DuckDB database '{duckdb_filename}':", e)
+            log_screen.error(f"Unable to connect to DuckDB database '{duckdb_filename}':", e)
             sys.exit(1)
 
         if create:
             try:
                 self._create_schema()
-                print("DW schema created successfully")
+                log_screen.info("DW schema created successfully")
             except duckdb.Error as e:
-                print("Error creating the DW tables:", e)
+                log_screen.error("Error creating the DW tables:", e)
                 sys.exit(2)
 
         # Link DuckDB and pygrametl
@@ -97,8 +97,6 @@ class DW:
             aircraft TEXT,
             airport TEXT,
             MR DOUBLE,
-            FH DOUBLE,
-            "TO" INTEGER,
             PRIMARY KEY (aircraft, airport),
             FOREIGN KEY (aircraft) REFERENCES dim_plane(aircraft),
             FOREIGN KEY (airport) REFERENCES dim_airport(airport)
@@ -161,7 +159,7 @@ class DW:
         self.fact_reports_airport = FactTable(
             name='fact_reports_airport',
             keyrefs=['aircraft', 'airport'],
-            measures=['MR', 'FH', 'TO']
+            measures=['MR']
         )
 
 
@@ -238,12 +236,12 @@ class DW:
             a.manufacturer,
             d.year,
             (SUM(f.PR)+sum(f.MR)),
-            sum(m.FH),
-            sum(m.TO),
-            1000*(SUM(f.PR)+sum(f.MR))/sum(m.FH) AS RRh,
-            100*(SUM(f.PR)+sum(f.MR))/sum(m.TO) AS RRc,
-            FROM fact_reports_monthly f, fact_flight_monthly m, dim_date_month d, dim_plane a
-            where f.date = d.date and f.aircraft = a.aircraft and f.date = m.date and f.aircraft = m.aircraft
+            sum(f.FH),
+            sum(f.TO),
+            1000*(SUM(f.PR)+sum(f.MR))/sum(f.FH) AS RRh,
+            100*(SUM(f.PR)+sum(f.MR))/sum(f.TO) AS RRc,
+            FROM fact_reports_monthly f, dim_date_month d, dim_plane a
+            where f.date = d.date and f.aircraft = a.aircraft
             GROUP BY a.manufacturer, d.year
             ORDER BY a.manufacturer, d.year
             """).fetchall()
