@@ -41,14 +41,10 @@ def extract_from_postgres(conn):
                             query='select * from "AIMS".maintenance m;',
                             names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','programmed') )
 
-    logbooksource = SQLSource(connection=conn,
-                            query='select * from "AMOS".technicallogbookorders t;',
-                            names=('workerid','aircraftregistration','executiondate','executionplace','workpackage','kind','reporteurclass','reporteurid','reportingdate','due','deferred','mel') )
-
     postflightreportssource = SQLSource(connection=conn,
                             query='select * from "AMOS".postflightreports p;',
                             names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
-    return {"flights": flightsource, "maintenance": maintenancesource, "logbook": logbooksource, "postflight": postflightreportssource}
+    return {"flights": flightsource, "maintenance": maintenancesource, "postflight": postflightreportssource}
 
 
 def extract_from_csv():

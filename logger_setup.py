@@ -7,7 +7,7 @@ def setup_loggers():
 
     sh = logging.StreamHandler(sys.stdout)
     sh.setLevel(logging.INFO)
-    formatter_screen = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    formatter_screen = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)d] - [%(levelname)s] %(message)s')
     sh.setFormatter(formatter_screen)
     log_screen.addHandler(sh)
 
@@ -16,7 +16,7 @@ def setup_loggers():
 
     fh = logging.FileHandler('cleaning.log', mode='a', encoding='utf-8')
     fh.setLevel(logging.INFO)
-    formatter_file = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    formatter_file = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)d] - [%(levelname)s] %(message)s')
     fh.setFormatter(formatter_file)
     log_file.addHandler(fh)
 

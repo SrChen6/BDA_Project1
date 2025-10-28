@@ -117,7 +117,7 @@ def transform_logbook(FH, postflight, personnel, airdimset):
             else:
                 reports_lst.append([report['aircraftregistration'], build_monthCode(report['reportingdate']), 0, 1, report['reporteurid']])
         else:
-            log_file.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension. Ignoring row {report} ")
+            log_file.info(f"BR-3: {report['aircraftregistration']} is not on the aircraft dimension.\n Ignoring row {report} ")
 
     reports = pd.DataFrame(reports_lst, columns=['aircraft', 'date', 'MR', 'PR', 'reporteurid'])
     reports_date = reports.groupby(['aircraft', 'date'], as_index=False).agg({'MR': 'sum', 'PR': 'sum'})
