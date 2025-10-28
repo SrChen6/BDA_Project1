@@ -34,16 +34,16 @@ def connect_postgres(config_path: str = 'db_conf.txt'):
 
 def extract_from_postgres(conn):
     flightsource = SQLSource(connection=conn,
-                            query='select * from "AIMS".flights f;',
-                            names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','flightid','departureairport','arrivalairport','actualdeparture','actualarrival','cancelled','delaycode','passengers','cabincrew','flightcrew') )
+                            query='select aircraftregistration, scheduleddeparture, scheduledarrival, actualdeparture, actualarrival, cancelled, flightid from "AIMS".flights f;',
+                            names=('aircraftregistration','scheduleddeparture','scheduledarrival','actualdeparture','actualarrival','cancelled','flightid') )
 
     maintenancesource = SQLSource(connection=conn,
-                            query='select * from "AIMS".maintenance m;',
-                            names=('id', 'aircraftregistration','scheduleddeparture','scheduledarrival','kind','programmed') )
+                            query='select aircraftregistration, scheduleddeparture, scheduledarrival, programmed from "AIMS".maintenance m;',
+                            names=('aircraftregistration','scheduleddeparture','scheduledarrival','programmed') )
 
     postflightreportssource = SQLSource(connection=conn,
-                            query='select * from "AMOS".postflightreports p;',
-                            names=('pfrid','aircraftregistration','reportingdate','reporteurid','reporteurclass','description','tlborder') )
+                            query='select aircraftregistration, reportingdate, reporteurid, reporteurclass from "AMOS".postflightreports p;',
+                            names=('aircraftregistration','reportingdate','reporteurid','reporteurclass') )
     return {"flights": flightsource, "maintenance": maintenancesource, "postflight": postflightreportssource}
 
 
